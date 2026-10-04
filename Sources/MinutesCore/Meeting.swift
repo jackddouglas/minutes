@@ -66,6 +66,17 @@ public struct Meeting: Codable, Identifiable, Equatable, Sendable {
     utterance.assignedName ?? name(for: utterance.speaker)
   }
 
+  /// Active passage names at the playback position; overlapping voices appear together.
+  public func speakers(at time: Double) -> [String] {
+    guard time.isFinite, time >= 0 else { return [] }
+    var seen = Set<String>()
+    return utterances.compactMap { utterance in
+      guard utterance.start <= time, time < utterance.end else { return nil }
+      let speaker = name(for: utterance)
+      return seen.insert(speaker).inserted ? speaker : nil
+    }
+  }
+
   /// Unknown passages and unnamed detected speakers, in listening order.
   /// A historical bulk Unassigned alias is not evidence of a single identity.
   public var passagesNeedingSpeakerReview: [Utterance] {

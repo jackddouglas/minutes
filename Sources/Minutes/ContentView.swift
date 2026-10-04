@@ -310,8 +310,6 @@ private struct TranscriptView: View {
   @Bindable var model: AppModel
   let meeting: Meeting
   @Binding var showSpeakers: Bool
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  private let speakerPanelWidth: CGFloat = 280
   @ViewState private var speakerToRename: String?
   @ViewState private var passageToRename: UUID?
   @ViewState private var showReprocess = false
@@ -410,97 +408,81 @@ private struct TranscriptView: View {
 
   var body: some View {
     ScrollViewReader { scroll in
-      ZStack(alignment: .trailing) {
-        ScrollView {
-          LazyVStack(alignment: .leading, spacing: 24) {
-            Text(meeting.title).font(.largeTitle.bold()).textSelection(.enabled)
+      ScrollView {
+        LazyVStack(alignment: .leading, spacing: 24) {
+          Text(meeting.title).font(.largeTitle.bold()).textSelection(.enabled)
+          HStack {
+            Text(
+              meeting.date, format: .dateTime.weekday(.wide).month(.wide).day().hour().minute())
+            Spacer()
+            Text(
+              "\(MarkdownExporter.timestamp(meeting.duration)) · \(Set(meeting.utterances.map(\.speaker).filter { $0 != "Unassigned" }).count) speakers"
+            )
+            .monospacedDigit()
+          }.font(.subheadline).foregroundStyle(.secondary)
+          if meeting.utterances.contains(where: { $0.words == nil }) {
             HStack {
-              Text(
-                meeting.date, format: .dateTime.weekday(.wide).month(.wide).day().hour().minute())
-              Spacer()
-              Text(
-                "\(MarkdownExporter.timestamp(meeting.duration)) · \(Set(meeting.utterances.map(\.speaker).filter { $0 != "Unassigned" }).count) speakers"
-              )
-              .monospacedDigit()
-            }.font(.subheadline).foregroundStyle(.secondary)
-            if meeting.utterances.contains(where: { $0.words == nil }) {
-              HStack {
-                Text("This transcript has no word timings. Re-transcribe to enable word playback.")
-                  .font(.caption).foregroundStyle(.secondary)
-                Button("Re-transcribe…") { showReprocess = true }
-                  .disabled(model.isBusy || model.isRecording)
-              }
+              Text("This transcript has no word timings. Re-transcribe to enable word playback.")
+                .font(.caption).foregroundStyle(.secondary)
+              Button("Re-transcribe…") { showReprocess = true }
+                .disabled(model.isBusy || model.isRecording)
             }
-            Divider()
-            if meeting.utterances.isEmpty {
-              Text("No speech was detected in this recording.").foregroundStyle(.secondary)
-            }
-            ForEach(meeting.utterances) { utterance in
-              VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .firstTextBaseline) {
-                  Menu {
-                    Menu("Assign This Passage") { passageNameActions(utterance) }
-                    if utterance.speaker != "Unassigned" {
-                      Menu("Assign All \(utterance.speaker) Passages") {
-                        bulkNameActions(utterance.speaker)
-                      }
+          }
+          Divider()
+          if meeting.utterances.isEmpty {
+            Text("No speech was detected in this recording.").foregroundStyle(.secondary)
+          }
+          ForEach(meeting.utterances) { utterance in
+            VStack(alignment: .leading, spacing: 8) {
+              HStack(alignment: .firstTextBaseline) {
+                Menu {
+                  Menu("Assign This Passage") { passageNameActions(utterance) }
+                  if utterance.speaker != "Unassigned" {
+                    Menu("Assign All \(utterance.speaker) Passages") {
+                      bulkNameActions(utterance.speaker)
                     }
-                  } label: {
-                    Text(meeting.name(for: utterance)).font(.headline)
                   }
-                  .menuStyle(.borderlessButton).fixedSize()
-                  .help("Assign or rename speaker").disabled(model.isBusy || model.isRecording)
-                  Spacer()
-                  Button(MarkdownExporter.timestamp(utterance.start)) {
-                    model.play(meeting, from: utterance.start)
-                  }.buttonStyle(.plain).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                    .help("Play from this timestamp").disabled(model.isBusy || model.isRecording)
+                } label: {
+                  Text(meeting.name(for: utterance)).font(.headline)
                 }
-                Text(playableText(utterance)).font(.system(size: 16)).lineSpacing(6).textSelection(
-                  .enabled
-                )
-                .tint(.primary)
-                .environment(
-                  \.openURL,
-                  OpenURLAction { url in
-                    guard url.scheme == "scribe-play", let index = Int(url.lastPathComponent),
-                      let words = utterance.words, words.indices.contains(index)
-                    else { return .discarded }
-                    model.play(meeting, from: words[index].start)
-                    return .handled
-                  }
-                )
-                .frame(maxWidth: .infinity, alignment: .leading)
-              }.id(utterance.id)
-            }
-          }.padding(28).frame(maxWidth: 860).frame(maxWidth: .infinity)
-        }.background(.background)
-          .clipped()
-          .safeAreaInset(edge: .bottom) {
-            TranscriptPlaybackControls(model: model, meeting: meeting)
-              .padding(16).controlSurface().padding(.horizontal, 24).padding(.bottom, 16)
+                .menuStyle(.borderlessButton).fixedSize()
+                .help("Assign or rename speaker").disabled(model.isBusy || model.isRecording)
+                Spacer()
+                Button(MarkdownExporter.timestamp(utterance.start)) {
+                  model.play(meeting, from: utterance.start)
+                }.buttonStyle(.plain).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                  .help("Play from this timestamp").disabled(model.isBusy || model.isRecording)
+              }
+              Text(playableText(utterance)).font(.system(size: 16)).lineSpacing(6).textSelection(
+                .enabled
+              )
+              .tint(.primary)
+              .environment(
+                \.openURL,
+                OpenURLAction { url in
+                  guard url.scheme == "scribe-play", let index = Int(url.lastPathComponent),
+                    let words = utterance.words, words.indices.contains(index)
+                  else { return .discarded }
+                  model.play(meeting, from: words[index].start)
+                  return .handled
+                }
+              )
+              .frame(maxWidth: .infinity, alignment: .leading)
+            }.id(utterance.id)
           }
-          // Reserve the final reading width once. Only the panel's position animates;
-          // neither AppKit split-view sizing nor text reflow runs during the reveal.
-          .padding(.trailing, showSpeakers ? speakerPanelWidth + 1 : 0)
-          .animation(nil, value: showSpeakers)
-
-        speakerSidebar(scroll: scroll)
-          .frame(width: speakerPanelWidth)
-          .frame(maxHeight: .infinity)
-          .background(.background)
-          .overlay(alignment: .leading) {
-            Rectangle().fill(Color(nsColor: .separatorColor)).frame(width: 1)
-              .accessibilityHidden(true)
-          }
-          .offset(x: showSpeakers ? 0 : speakerPanelWidth + 1)
-          .opacity(showSpeakers ? 1 : 0)
-          .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: showSpeakers)
-          .allowsHitTesting(showSpeakers)
-          .disabled(!showSpeakers)
-          .accessibilityHidden(!showSpeakers)
-      }
-      .clipped()
+        }.padding(28).padding(.bottom, 100).frame(maxWidth: 860).frame(maxWidth: .infinity)
+      }.background(.background)
+        .clipped()
+        .overlay(alignment: .bottom) {
+          TranscriptPlaybackControls(model: model, meeting: meeting)
+            .padding(.horizontal, 20).padding(.vertical, 12)
+            .frame(maxWidth: 680).controlSurface(cornerRadius: 32, clearGlass: true)
+            .padding(.horizontal, 24).padding(.bottom, 16)
+        }
+        .inspector(isPresented: $showSpeakers) {
+          speakerSidebar(scroll: scroll)
+            .inspectorColumnWidth(min: 240, ideal: 280, max: 360)
+        }
     }
     .sheet(isPresented: $showReprocess) { ReprocessTranscriptView(model: model, meeting: meeting) }
     .alert(
@@ -593,22 +575,47 @@ private struct ReprocessTranscriptView: View {
 private struct TranscriptPlaybackControls: View {
   let model: AppModel
   let meeting: Meeting
-  var showsHint = true
-
   var body: some View {
-    HStack {
-      Button(
-        model.playback.isPlaying ? "Pause" : "Play",
-        systemImage: model.playback.isPlaying ? "pause.fill" : "play.fill"
-      ) {
-        model.togglePlayback()
-      }.disabled(model.isBusy || model.isRecording)
-      Text(MarkdownExporter.timestamp(model.playback.position)).monospacedDigit()
-      Text("/ " + MarkdownExporter.timestamp(meeting.duration)).monospacedDigit().foregroundStyle(
-        .secondary)
-      Spacer()
-      if showsHint {
-        Text("Click a word or timestamp to listen.").font(.caption).foregroundStyle(.secondary)
+    HStack(spacing: 20) {
+      HStack(spacing: 16) {
+        Button("Back 15 seconds", systemImage: "gobackward.15") {
+          model.play(meeting, from: max(0, model.playback.position - 15))
+        }
+        Button(
+          model.playback.isPlaying ? "Pause" : "Play",
+          systemImage: model.playback.isPlaying ? "pause.fill" : "play.fill"
+        ) {
+          model.togglePlayback()
+        }.font(.title2).frame(width: 28)
+        Button("Forward 15 seconds", systemImage: "goforward.15") {
+          model.play(meeting, from: min(meeting.duration, model.playback.position + 15))
+        }
+      }
+      .labelStyle(.iconOnly).buttonStyle(.plain).font(.title3)
+      .disabled(model.isBusy || model.isRecording)
+
+      VStack(alignment: .leading, spacing: 6) {
+        let speakers = meeting.speakers(at: model.playback.position)
+        HStack(alignment: .firstTextBaseline) {
+          Text(meeting.title).font(.headline).lineLimit(1)
+          Text("·").foregroundStyle(.secondary).accessibilityHidden(true)
+          Text(speakers.isEmpty ? "No speech" : speakers.joined(separator: ", "))
+            .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+            .help(speakers.joined(separator: ", "))
+            .accessibilityLabel("Current speaker")
+            .accessibilityValue(speakers.isEmpty ? "No speech" : speakers.joined(separator: ", "))
+          Spacer(minLength: 8)
+          Text(
+            "\(MarkdownExporter.timestamp(model.playback.position)) / \(MarkdownExporter.timestamp(meeting.duration))"
+          )
+          .font(.caption.monospacedDigit()).foregroundStyle(.secondary).fixedSize()
+        }
+        ProgressView(
+          value: min(model.playback.position, meeting.duration), total: max(1, meeting.duration)
+        )
+        .tint(.secondary)
+        .accessibilityLabel("Playback progress")
+        .accessibilityValue(MarkdownExporter.timestamp(model.playback.position))
       }
     }
   }
