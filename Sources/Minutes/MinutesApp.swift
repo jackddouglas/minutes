@@ -62,6 +62,64 @@ struct MinutesApp: App {
     Settings {
       MinutesSettingsView(model: model)
     }.windowResizability(.contentSize)
+
+    MenuBarExtra {
+      MinutesMenu(model: model)
+    } label: {
+      Label(
+        model.isRecording ? "Minutes — Recording" : "Minutes",
+        systemImage: model.isRecording ? "record.circle.fill" : "waveform")
+    }
+  }
+}
+
+private struct MinutesMenu: View {
+  let model: AppModel
+  @Environment(\.openWindow) private var openWindow
+  @Environment(\.openSettings) private var openSettings
+
+  var body: some View {
+    Button("Open Minutes") { showWindow() }
+    if model.isRecording {
+      Text("Recording")
+      Button("Stop & Transcribe") { model.stop() }
+        .disabled(model.isBusy)
+    } else if model.isBusy {
+      Text(model.status)
+    } else {
+      Button("New Recording…") {
+        model.newMeeting()
+        showWindow()
+      }
+    }
+    if let error = model.error {
+      Button("Recording or transcription needs attention…") { showWindow() }
+        .help(error)
+    }
+    Divider()
+    if model.calendarMonitor.invitations.isEmpty {
+      Text(model.calendarMonitor.menuStatus)
+    } else {
+      ForEach(model.calendarMonitor.invitations) { meeting in
+        Button("Record \(meeting.title)…") {
+          model.calendarPrompt = meeting
+          showWindow()
+        }
+        .disabled(model.isBusy || model.isRecording)
+      }
+    }
+    Divider()
+    Button("Settings…") {
+      openSettings()
+      NSApp.activate(ignoringOtherApps: true)
+    }
+    Button("Quit Minutes") { NSApp.terminate(nil) }
+      .disabled(model.isBusy || model.isRecording)
+  }
+
+  private func showWindow() {
+    openWindow(id: "main")
+    NSApp.activate(ignoringOtherApps: true)
   }
 }
 
@@ -71,8 +129,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var playbackMonitor: Any?
   private var togglePlayback: (() -> Bool)?
 
+  func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+    false
+  }
+
   func installPlaybackShortcut(_ action: @escaping () -> Bool) {
     togglePlayback = action
+    guard playbackMonitor == nil else { return }
     guard playbackMonitor == nil else { return }
     playbackMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
       let consumed = MainActor.assumeIsolated {

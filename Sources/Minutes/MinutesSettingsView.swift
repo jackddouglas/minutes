@@ -26,7 +26,7 @@ struct MinutesSettingsView: View {
               .font(.caption).foregroundStyle(.secondary)
             }
             Text(
-              "Uses calendars synced to the macOS Calendar app. Keep Minutes open to receive reminders. Recording starts only after you confirm; your calendar is never changed."
+              "Uses calendars synced to the macOS Calendar app. Minutes keeps watching from the menu bar when its window is closed. Recording starts only after you confirm; your calendar is never changed."
             )
             .font(.caption).foregroundStyle(.secondary)
             Button("Refresh Calendar") { model.calendarMonitor.refresh() }

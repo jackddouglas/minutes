@@ -28,6 +28,18 @@ final class CalendarMonitor: NSObject, UNUserNotificationCenterDelegate {
   private var seen: [String: Double]
   private var center: UNUserNotificationCenter { .current() }
 
+  var menuStatus: String {
+    if requestingAccess { return "Connecting Calendar…" }
+    guard enabled else { return "Calendar reminders off" }
+    guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else {
+      return "Calendar access needed"
+    }
+    guard !selectedCalendarIDs.isEmpty else { return "Choose calendars in Settings" }
+    return upcoming.isEmpty
+      ? "No upcoming meetings"
+      : "\(upcoming.count) upcoming meeting\(upcoming.count == 1 ? "" : "s")"
+  }
+
   init(preferences: UserDefaults = .standard) {
     self.preferences = preferences
     selectedCalendarIDs = Set(preferences.stringArray(forKey: "selectedCalendarIDs") ?? [])
@@ -145,7 +157,10 @@ final class CalendarMonitor: NSObject, UNUserNotificationCenterDelegate {
     var ledger = CalendarReminderLedger(notified: seen)
     for meeting in ledger.claimDue(upcoming, at: now) {
       invitations.append(meeting)
-      if !NSApp.isActive { notify(meeting) }
+      let mainWindowVisible = NSApp.windows.contains {
+        $0.identifier?.rawValue == "main" && $0.isVisible && !$0.isMiniaturized
+      }
+      if !NSApp.isActive || !mainWindowVisible { notify(meeting) }
     }
     seen = ledger.notified
     preferences.set(seen, forKey: "calendarMeetingsNotified")
