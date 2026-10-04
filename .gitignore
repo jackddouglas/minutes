@@ -1,0 +1,7 @@
+.build/
+dist/
+.DS_Store
+
+# Local planning files
+PLAN.md
+plans/

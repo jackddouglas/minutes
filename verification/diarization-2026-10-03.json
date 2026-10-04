@@ -1,0 +1,40 @@
+[
+  {
+    "detectedSpeakers" : 3,
+    "input" : "synthetic",
+    "maxWordSeconds" : 0.80000000000001137,
+    "quality" : "standard",
+    "seconds" : 2.7541459798812866,
+    "speakerAgreementOnSyntheticWords" : 0.67123287671232879,
+    "unknownWords" : 9,
+    "words" : 150
+  },
+  {
+    "detectedSpeakers" : 3,
+    "input" : "synthetic",
+    "maxWordSeconds" : 0.80000000000001137,
+    "quality" : "thorough",
+    "seconds" : 3.25279700756073,
+    "speakerAgreementOnSyntheticWords" : 0.71232876712328763,
+    "unknownWords" : 0,
+    "words" : 150
+  },
+  {
+    "detectedSpeakers" : 2,
+    "input" : "recording-excerpt",
+    "maxWordSeconds" : 1.4400000000000013,
+    "quality" : "standard",
+    "seconds" : 2.5480090379714966,
+    "unknownWords" : 9,
+    "words" : 93
+  },
+  {
+    "detectedSpeakers" : 2,
+    "input" : "recording-excerpt",
+    "maxWordSeconds" : 1.4400000000000013,
+    "quality" : "thorough",
+    "seconds" : 3.654420018196106,
+    "unknownWords" : 0,
+    "words" : 93
+  }
+]

@@ -1,0 +1,40 @@
+{
+  "fill": {
+    "linear-gradient": [
+      "srgb:0.97059,0.97059,0.96471,1.00000",
+      "srgb:0.78000,0.79000,0.78000,1.00000"
+    ]
+  },
+  "groups": [
+    {
+      "name": "Voice recorder",
+      "layers": [
+        {
+          "image-name": "Recorder.png",
+          "name": "Ivory recorder",
+          "fill": "none",
+          "glass": false,
+          "position": {
+            "scale": 0.82,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          }
+        }
+      ],
+      "specular": false,
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.35
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  }
+}

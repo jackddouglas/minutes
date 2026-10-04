@@ -1,0 +1,627 @@
+import CoreTransferable
+import MinutesCore
+import SwiftUI
+import UniformTypeIdentifiers
+
+struct ContentView: View {
+  @Bindable var model: AppModel
+  @Environment(\.openSettings) private var openSettings
+  @ViewState private var showSpeakers = false
+  @ViewState private var search = ""
+  @ViewState private var renamingMeeting: Meeting?
+  @ViewState private var meetingName = ""
+  @ViewState private var reprocessingMeeting: Meeting?
+  @ViewState private var reviewingMeeting: Meeting?
+  @ViewState private var datingMeeting: Meeting?
+  @ViewState private var recordingDate = Date()
+  @ViewState private var sidebarNow = Date()
+
+  private var filteredMeetings: [Meeting] {
+    model.meetings.filter {
+      search.isEmpty || $0.title.localizedCaseInsensitiveContains(search)
+        || $0.utterances.contains { $0.text.localizedCaseInsensitiveContains(search) }
+    }
+  }
+
+  var body: some View {
+    NavigationSplitView {
+      List(selection: $model.selection) {
+        ForEach(MeetingDay.group(filteredMeetings)) { day in
+          Section(dayTitle(day.date)) {
+            ForEach(day.meetings) { meeting in
+              HStack(alignment: .top, spacing: 10) {
+                Image(systemName: meeting.isTranscribed ? "text.bubble" : "waveform")
+                  .foregroundStyle(.secondary).padding(.top, 2)
+                VStack(alignment: .leading, spacing: 5) {
+                  Text(meeting.title).fontWeight(.medium).lineLimit(2).help(meeting.title)
+                  HStack {
+                    Text(meeting.date, format: .dateTime.hour().minute())
+                    Text("·")
+                    Text(MarkdownExporter.timestamp(meeting.duration))
+                  }.font(.caption).foregroundStyle(.secondary)
+                }
+              }.padding(.vertical, 5).tag(meeting.id)
+                .contextMenu {
+                  Button("Rename…") { beginRename(meeting) }
+                  Button("Change Recording Date…") { beginDate(meeting) }
+                  Button("Export Markdown…") { model.export(meeting) }
+                  Divider()
+                  Button("Move to Trash…", role: .destructive) { model.meetingToDelete = meeting }
+                }
+                .disabled(model.isBusy || model.isRecording)
+            }
+          }
+        }
+      }.listStyle(.sidebar)
+        .navigationSplitViewColumnWidth(min: 230, ideal: 280, max: 380)
+        .safeAreaInset(edge: .bottom) {
+          HStack {
+            Text("\(model.meetings.count) meetings").font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            Button("Settings", systemImage: "gearshape") { openSettings() }
+              .labelStyle(.iconOnly).buttonStyle(.borderless).help("Settings")
+          }.padding(14)
+        }
+        .overlay {
+          if filteredMeetings.isEmpty && !search.isEmpty {
+            ContentUnavailableView.search(text: search)
+          }
+        }
+    } detail: {
+      meetingDetail
+    }
+    .toolbarBackgroundVisibility(Visibility.hidden, for: ToolbarPlacement.windowToolbar)
+    .navigationTitle(model.selectedMeeting?.title ?? "New Meeting")
+    .toolbar {
+      ToolbarItem(placement: .navigation) {
+        Button("New Meeting", systemImage: "square.and.pencil") { model.newMeeting() }
+          .help("New meeting").disabled(model.isBusy || model.isRecording)
+      }
+      ToolbarItemGroup(placement: .primaryAction) {
+        if let meeting = model.selectedMeeting {
+          if meeting.isTranscribed {
+            Button("Review Speakers", systemImage: "person.crop.circle.badge.questionmark") {
+              reviewingMeeting = meeting
+            }.help("Review unresolved speakers").disabled(model.isBusy || model.isRecording)
+            ShareLink(item: TranscriptShare(meeting: meeting), preview: SharePreview(meeting.title))
+              .help("Share transcript").disabled(model.isBusy || model.isRecording)
+          }
+          Menu {
+            Button("Rename…") { beginRename(meeting) }
+            Button("Change Recording Date…") { beginDate(meeting) }
+            if meeting.isTranscribed {
+              Button("Reprocess Transcript…") { reprocessingMeeting = meeting }
+              Button("Export Markdown…") { model.export(meeting) }
+            }
+            Divider()
+            Button("Move to Trash…", role: .destructive) { model.meetingToDelete = meeting }
+          } label: {
+            Label("Meeting Actions", systemImage: "ellipsis.circle")
+          }.help("Meeting actions").disabled(model.isBusy || model.isRecording)
+          if meeting.isTranscribed {
+            Button("Speakers", systemImage: "sidebar.right") { showSpeakers.toggle() }
+              .help(showSpeakers ? "Hide speakers" : "Show speakers")
+          }
+        }
+      }
+    }
+    .frame(minWidth: 840, minHeight: 620)
+    .searchable(text: $search, placement: .sidebar, prompt: "Search meetings")
+    .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification))
+    { _ in
+      sidebarNow = Date()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
+      sidebarNow = Date()
+    }
+    .sheet(item: $reprocessingMeeting) { meeting in
+      ReprocessTranscriptView(model: model, meeting: meeting)
+    }
+    .sheet(item: $reviewingMeeting) { meeting in
+      SpeakerReviewView(model: model, meetingID: meeting.id)
+    }
+    .sheet(item: $datingMeeting) { meeting in
+      VStack(alignment: .leading, spacing: 20) {
+        Text("Recording Date").font(.title2.bold())
+        Text("Used to organize this meeting in your library.").foregroundStyle(.secondary)
+        DatePicker("Recorded", selection: $recordingDate)
+        HStack {
+          Button("Cancel", role: .cancel) { datingMeeting = nil }.keyboardShortcut(.cancelAction)
+          Spacer()
+          Button("Save") {
+            model.changeRecordingDate(meeting, to: recordingDate)
+            datingMeeting = nil
+          }.keyboardShortcut(.defaultAction)
+        }
+      }.padding(24).frame(width: 420)
+    }
+    .sheet(item: $model.calendarPrompt) { meeting in
+      CalendarRecordingPrompt(model: model, meeting: meeting)
+    }
+    .alert(
+      "Move Meeting to Trash?",
+      isPresented: Binding(
+        get: { model.meetingToDelete != nil }, set: { if !$0 { model.meetingToDelete = nil } }
+      ), presenting: model.meetingToDelete
+    ) { meeting in
+      Button("Cancel", role: .cancel) { model.meetingToDelete = nil }
+      Button("Move to Trash", role: .destructive) {
+        model.moveToTrash(meeting)
+        model.meetingToDelete = nil
+      }
+    } message: { meeting in
+      Text(
+        "“\(meeting.title)” and its recordings, transcript, and Minutes exports will be moved to Finder’s Trash. Audio needed by other meetings is preserved. You can recover the files from Trash until you empty it."
+      )
+    }
+    .alert(
+      "Rename Meeting",
+      isPresented: Binding(
+        get: { renamingMeeting != nil }, set: { if !$0 { renamingMeeting = nil } })
+    ) {
+      TextField("Meeting name", text: $meetingName)
+      Button("Cancel", role: .cancel) { renamingMeeting = nil }
+      Button("Rename") {
+        if let meeting = renamingMeeting { model.renameMeeting(meeting, to: meetingName) }
+        renamingMeeting = nil
+      }.disabled(meetingName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+    .alert(
+      "Minutes",
+      isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })
+    ) {
+      Button("OK") { model.error = nil }
+    } message: {
+      Text(model.error ?? "")
+    }
+  }
+
+  private var meetingDetail: some View {
+    VStack(spacing: 0) {
+      if let invitation = model.calendarMonitor.invitations.first {
+        calendarBanner(invitation)
+      }
+      if model.isRecording || model.isBusy { activityBar }
+      if let meeting = model.selectedMeeting, meeting.isTranscribed {
+        TranscriptView(model: model, meeting: meeting, showSpeakers: $showSpeakers)
+          .id(meeting.id)
+      } else if let meeting = model.selectedMeeting, !model.isRecording && !model.isBusy {
+        ContentUnavailableView {
+          Label(meeting.title, systemImage: "waveform")
+        } description: {
+          Text("This session has not been transcribed.")
+        } actions: {
+          Button("Transcribe") { model.retry(meeting) }
+        }
+      } else {
+        recorder
+      }
+    }
+    .background {
+      Rectangle().fill(.bar).ignoresSafeArea(.container, edges: .top)
+    }
+  }
+
+  private func beginRename(_ meeting: Meeting) {
+    renamingMeeting = meeting
+    meetingName = meeting.title
+  }
+
+  private var activityBar: some View {
+    HStack(spacing: 10) {
+      if model.isRecording {
+        Circle().fill(.red).frame(width: 8, height: 8)
+        Text("Recording")
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+          Text(
+            MarkdownExporter.timestamp(
+              context.date.timeIntervalSince(model.recordingStarted ?? context.date))
+          )
+          .monospacedDigit().foregroundStyle(.secondary)
+        }
+        Spacer()
+        Button("Stop & Transcribe", systemImage: "stop.fill") { model.stop() }
+      } else {
+        ProgressView().controlSize(.small)
+        Text(model.status)
+        Spacer()
+      }
+    }.padding(12).background(.bar)
+  }
+
+  private var recorder: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Form {
+        if !model.calendarMonitor.upcoming.isEmpty {
+          Section("Upcoming Meetings") {
+            ForEach(model.calendarMonitor.upcoming.prefix(3)) { meeting in
+              HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                  Text(meeting.title).font(.headline)
+                  Text(meeting.start, format: .dateTime.weekday(.abbreviated).hour().minute())
+                    .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Record…") { model.calendarPrompt = meeting }
+              }
+            }
+          }
+        }
+        Section("New Recording") {
+          TextField("Meeting name", text: $model.title, prompt: Text("Untitled meeting"))
+          BrowserPicker(model: model)
+          LabeledContent("Microphone", value: "System default")
+          Text("Records browser audio and your microphone. Use headphones to avoid echo.")
+            .font(.caption).foregroundStyle(.secondary)
+          HStack {
+            Spacer()
+            Button("Start Recording", systemImage: "record.circle") { model.start() }
+              .buttonStyle(.borderedProminent).controlSize(.large)
+              .keyboardShortcut(.defaultAction).disabled(!model.canStart)
+          }
+        }
+        Section("Import Audio") {
+          HStack {
+            Button("Single Recording…", systemImage: "waveform") { model.importRecording() }
+            Button("System & Microphone…", systemImage: "waveform.badge.mic") {
+              model.importRecording(paired: true)
+            }
+          }
+        }
+      }.formStyle(.grouped)
+    }.frame(maxWidth: 760).frame(maxWidth: .infinity)
+      .background(Color(nsColor: .windowBackgroundColor))
+      .disabled(model.isBusy || model.isRecording)
+  }
+
+  private func dayTitle(_ date: Date) -> String {
+    if Calendar.current.isDate(date, inSameDayAs: sidebarNow) { return "Today" }
+    if Calendar.current.isDate(
+      date,
+      inSameDayAs: Calendar.current.date(byAdding: .day, value: -1, to: sidebarNow) ?? sidebarNow)
+    {
+      return "Yesterday"
+    }
+    return date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).year())
+  }
+
+  private func beginDate(_ meeting: Meeting) {
+    recordingDate = meeting.date
+    datingMeeting = meeting
+  }
+
+  private func calendarBanner(_ meeting: CalendarMeeting) -> some View {
+    HStack(spacing: 12) {
+      Image(systemName: "calendar.badge.clock").font(.title2).foregroundStyle(.tint)
+      VStack(alignment: .leading, spacing: 3) {
+        Text("Your meeting is starting").font(.headline)
+        Text(meeting.title).lineLimit(1).help(meeting.title)
+      }
+      Spacer()
+      Button("Not Now") { model.calendarMonitor.dismiss(meeting) }
+      Button("Record…") { model.calendarPrompt = meeting }
+        .buttonStyle(.borderedProminent).disabled(model.isBusy || model.isRecording)
+    }.padding(16).controlSurface().padding(12)
+  }
+
+}
+
+private struct TranscriptView: View {
+  @Bindable var model: AppModel
+  let meeting: Meeting
+  @Binding var showSpeakers: Bool
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  private let speakerPanelWidth: CGFloat = 280
+  @ViewState private var speakerToRename: String?
+  @ViewState private var passageToRename: UUID?
+  @ViewState private var showReprocess = false
+  @ViewState private var speakerName = ""
+
+  private func playableText(_ utterance: Utterance) -> AttributedString {
+    guard let words = utterance.words, !words.isEmpty else {
+      return AttributedString(utterance.text)
+    }
+    var text = AttributedString()
+    for (index, word) in words.enumerated() {
+      if index > 0 { text.append(AttributedString(" ")) }
+      var part = AttributedString(word.text)
+      part.link = URL(string: "scribe-play://word/\(index)")
+      text.append(part)
+    }
+    return text
+  }
+
+  private func speakerSidebar(scroll: ScrollViewProxy) -> some View {
+    VStack(spacing: 0) {
+      Text("Speakers").font(.headline)
+        .frame(maxWidth: .infinity, alignment: .leading).padding()
+      Divider()
+      if meeting.firstSpeakerUtterances.isEmpty {
+        ContentUnavailableView(
+          "No speakers", systemImage: "person.2", description: Text("No speech was detected."))
+      } else {
+        List(meeting.firstSpeakerUtterances) { first in
+          VStack(alignment: .leading, spacing: 8) {
+            Button {
+              scroll.scrollTo(first.id, anchor: .top)
+              model.play(meeting, from: first.start)
+            } label: {
+              VStack(alignment: .leading, spacing: 4) {
+                Text(meeting.name(for: first.speaker)).font(.headline)
+                Text("\(first.speaker) · \(MarkdownExporter.timestamp(first.start))")
+                  .font(.caption).foregroundStyle(.secondary)
+              }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+            }.buttonStyle(.plain)
+              .help("Go to and play the first appearance of \(meeting.name(for: first.speaker))")
+            if first.speaker == "Unassigned" {
+              Text(
+                "These passages may contain different people. Assign each passage in the transcript."
+              )
+              .font(.caption).foregroundStyle(.secondary)
+              if let legacyName = meeting.speakerNames["Unassigned"] {
+                Text("Previous bulk label: \(legacyName). Review passages individually.")
+                  .font(.caption).foregroundStyle(.secondary)
+              }
+            } else {
+              Menu("Assign Person") {
+                bulkNameActions(first.speaker)
+              }.menuStyle(.borderlessButton).fixedSize()
+            }
+          }.padding(.vertical, 6)
+            .disabled(model.isBusy || model.isRecording)
+        }.listStyle(.plain)
+      }
+      Divider()
+      Text(
+        "Click a speaker to jump to their first appearance and listen. Assign a saved person or enter a name."
+      )
+      .font(.caption).foregroundStyle(.secondary).padding()
+    }
+  }
+
+  @ViewBuilder
+  private func bulkNameActions(_ speaker: String) -> some View {
+    ForEach(model.savedSpeakers, id: \.self) { name in
+      Button(name) { model.renameSpeaker(speaker, to: name, in: meeting) }
+    }
+    if !model.savedSpeakers.isEmpty { Divider() }
+    Button("Enter Name…") {
+      passageToRename = nil
+      speakerToRename = speaker
+      speakerName = meeting.name(for: speaker)
+    }
+  }
+
+  @ViewBuilder
+  private func passageNameActions(_ utterance: Utterance) -> some View {
+    ForEach(model.savedSpeakers, id: \.self) { name in
+      Button(name) { model.assignPassage(utterance.id, to: name, in: meeting) }
+    }
+    if !model.savedSpeakers.isEmpty { Divider() }
+    Button("Enter Name…") {
+      speakerToRename = nil
+      passageToRename = utterance.id
+      speakerName = utterance.assignedName ?? ""
+    }
+    if utterance.assignedName != nil {
+      Button("Use Detected Speaker") { model.assignPassage(utterance.id, to: nil, in: meeting) }
+    }
+  }
+
+  var body: some View {
+    ScrollViewReader { scroll in
+      ZStack(alignment: .trailing) {
+        ScrollView {
+          LazyVStack(alignment: .leading, spacing: 24) {
+            Text(meeting.title).font(.largeTitle.bold()).textSelection(.enabled)
+            HStack {
+              Text(
+                meeting.date, format: .dateTime.weekday(.wide).month(.wide).day().hour().minute())
+              Spacer()
+              Text(
+                "\(MarkdownExporter.timestamp(meeting.duration)) · \(Set(meeting.utterances.map(\.speaker).filter { $0 != "Unassigned" }).count) speakers"
+              )
+              .monospacedDigit()
+            }.font(.subheadline).foregroundStyle(.secondary)
+            if meeting.utterances.contains(where: { $0.words == nil }) {
+              HStack {
+                Text("This transcript has no word timings. Re-transcribe to enable word playback.")
+                  .font(.caption).foregroundStyle(.secondary)
+                Button("Re-transcribe…") { showReprocess = true }
+                  .disabled(model.isBusy || model.isRecording)
+              }
+            }
+            Divider()
+            if meeting.utterances.isEmpty {
+              Text("No speech was detected in this recording.").foregroundStyle(.secondary)
+            }
+            ForEach(meeting.utterances) { utterance in
+              VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                  Menu {
+                    Menu("Assign This Passage") { passageNameActions(utterance) }
+                    if utterance.speaker != "Unassigned" {
+                      Menu("Assign All \(utterance.speaker) Passages") {
+                        bulkNameActions(utterance.speaker)
+                      }
+                    }
+                  } label: {
+                    Text(meeting.name(for: utterance)).font(.headline)
+                  }
+                  .menuStyle(.borderlessButton).fixedSize()
+                  .help("Assign or rename speaker").disabled(model.isBusy || model.isRecording)
+                  Spacer()
+                  Button(MarkdownExporter.timestamp(utterance.start)) {
+                    model.play(meeting, from: utterance.start)
+                  }.buttonStyle(.plain).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    .help("Play from this timestamp").disabled(model.isBusy || model.isRecording)
+                }
+                Text(playableText(utterance)).font(.system(size: 16)).lineSpacing(6).textSelection(
+                  .enabled
+                )
+                .tint(.primary)
+                .environment(
+                  \.openURL,
+                  OpenURLAction { url in
+                    guard url.scheme == "scribe-play", let index = Int(url.lastPathComponent),
+                      let words = utterance.words, words.indices.contains(index)
+                    else { return .discarded }
+                    model.play(meeting, from: words[index].start)
+                    return .handled
+                  }
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+              }.id(utterance.id)
+            }
+          }.padding(28).frame(maxWidth: 860).frame(maxWidth: .infinity)
+        }.background(.background)
+          .clipped()
+          .safeAreaInset(edge: .bottom) {
+            TranscriptPlaybackControls(model: model, meeting: meeting)
+              .padding(16).controlSurface().padding(.horizontal, 24).padding(.bottom, 16)
+          }
+          // Reserve the final reading width once. Only the panel's position animates;
+          // neither AppKit split-view sizing nor text reflow runs during the reveal.
+          .padding(.trailing, showSpeakers ? speakerPanelWidth + 1 : 0)
+          .animation(nil, value: showSpeakers)
+
+        speakerSidebar(scroll: scroll)
+          .frame(width: speakerPanelWidth)
+          .frame(maxHeight: .infinity)
+          .background(.background)
+          .overlay(alignment: .leading) {
+            Rectangle().fill(Color(nsColor: .separatorColor)).frame(width: 1)
+              .accessibilityHidden(true)
+          }
+          .offset(x: showSpeakers ? 0 : speakerPanelWidth + 1)
+          .opacity(showSpeakers ? 1 : 0)
+          .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: showSpeakers)
+          .allowsHitTesting(showSpeakers)
+          .disabled(!showSpeakers)
+          .accessibilityHidden(!showSpeakers)
+      }
+      .clipped()
+    }
+    .sheet(isPresented: $showReprocess) { ReprocessTranscriptView(model: model, meeting: meeting) }
+    .alert(
+      passageToRename == nil ? "Rename Speaker" : "Assign This Passage",
+      isPresented: Binding(
+        get: { speakerToRename != nil || passageToRename != nil },
+        set: {
+          if !$0 {
+            speakerToRename = nil
+            passageToRename = nil
+          }
+        })
+    ) {
+      TextField("Name", text: $speakerName)
+      Button("Cancel", role: .cancel) {
+        speakerToRename = nil
+        passageToRename = nil
+      }
+      Button("Save") {
+        if let id = passageToRename {
+          model.assignPassage(id, to: speakerName, in: meeting)
+        } else if let speaker = speakerToRename {
+          model.renameSpeaker(speaker, to: speakerName, in: meeting)
+        }
+        speakerToRename = nil
+        passageToRename = nil
+      }
+    }
+  }
+}
+
+struct DiarizationOptionsView: View {
+  @Binding var quality: TranscriptionOptions.Quality
+  @Binding var speakerCount: Int
+
+  var body: some View {
+    Picker("Speaker analysis", selection: $quality) {
+      Text("Standard").tag(TranscriptionOptions.Quality.standard)
+      Text("Thorough (slower)").tag(TranscriptionOptions.Quality.thorough)
+    }
+    Stepper(value: $speakerCount, in: 0...20) {
+      LabeledContent(
+        "System-audio speakers", value: speakerCount == 0 ? "Automatic" : String(speakerCount))
+    }
+    Text(
+      "Count only people on the system track, excluding your separate microphone. Set 0 for Automatic. Thorough analysis uses more processing time; results still need review."
+    )
+    .font(.caption).foregroundStyle(.secondary)
+  }
+}
+
+private struct ReprocessTranscriptView: View {
+  let model: AppModel
+  let meeting: Meeting
+  @Environment(\.dismiss) private var dismiss
+  @ViewState private var quality = TranscriptionOptions.Quality.thorough
+  @ViewState private var speakerCount = 0
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      Text("Reprocess Transcript").font(.title2)
+      Form {
+        DiarizationOptionsView(quality: $quality, speakerCount: $speakerCount)
+      }.formStyle(.grouped)
+      Text(
+        "Creates a separate transcript using the retained recordings. The original and its manual speaker assignments are preserved; new speaker numbers start without names."
+      )
+      .font(.callout).foregroundStyle(.secondary)
+      HStack {
+        Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
+        Spacer()
+        Button("Create New Transcript") {
+          model.reprocess(
+            meeting,
+            options: .init(
+              quality: quality, expectedSystemSpeakers: speakerCount == 0 ? nil : speakerCount))
+          dismiss()
+        }.keyboardShortcut(.defaultAction).disabled(model.isBusy || model.isRecording)
+      }
+    }.padding(24).frame(width: 500, height: 390)
+      .onAppear {
+        quality = meeting.transcriptionOptions?.quality ?? model.defaultQuality
+        speakerCount = meeting.transcriptionOptions?.expectedSystemSpeakers ?? 0
+      }
+  }
+}
+
+// Keep playback observation out of TranscriptView: clock ticks must not rebuild
+// every attributed word link or relayout the scrolling transcript.
+private struct TranscriptPlaybackControls: View {
+  let model: AppModel
+  let meeting: Meeting
+  var showsHint = true
+
+  var body: some View {
+    HStack {
+      Button(
+        model.playback.isPlaying ? "Pause" : "Play",
+        systemImage: model.playback.isPlaying ? "pause.fill" : "play.fill"
+      ) {
+        model.togglePlayback()
+      }.disabled(model.isBusy || model.isRecording)
+      Text(MarkdownExporter.timestamp(model.playback.position)).monospacedDigit()
+      Text("/ " + MarkdownExporter.timestamp(meeting.duration)).monospacedDigit().foregroundStyle(
+        .secondary)
+      Spacer()
+      if showsHint {
+        Text("Click a word or timestamp to listen.").font(.caption).foregroundStyle(.secondary)
+      }
+    }
+  }
+}
+
+private struct TranscriptShare: Transferable {
+  let meeting: Meeting
+  static var transferRepresentation: some TransferRepresentation {
+    FileRepresentation(exportedContentType: .plainText) { item in
+      let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "ScribeShare/\(UUID().uuidString)", isDirectory: true)
+      let url = try MarkdownExporter.write(item.meeting, to: directory)
+      return SentTransferredFile(url)
+    }
+  }
+}
