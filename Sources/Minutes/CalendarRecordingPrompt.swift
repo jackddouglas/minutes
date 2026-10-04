@@ -51,8 +51,9 @@ struct CalendarRecordingPrompt: View {
           model.start()
           model.calendarMonitor.dismiss(meeting)
           dismiss()
-        }.primaryAction().disabled(!model.canStart)
+        }.buttonStyle(.bordered).disabled(!model.canStart)
       }
     }.padding(24).frame(width: 500)
+      .background(Color(nsColor: .windowBackgroundColor))
   }
 }

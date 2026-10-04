@@ -197,6 +197,7 @@ struct ContentView: View {
         recorder
       }
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background {
       Color(nsColor: .windowBackgroundColor).ignoresSafeArea(.container, edges: .top)
     }
@@ -256,7 +257,7 @@ struct ContentView: View {
           HStack {
             Spacer()
             Button("Start Recording", systemImage: "record.circle") { model.start() }
-              .primaryAction().controlSize(.large)
+              .buttonStyle(.bordered).controlSize(.large)
               .keyboardShortcut(.defaultAction).disabled(!model.canStart)
           }
         }
@@ -300,7 +301,7 @@ struct ContentView: View {
       Spacer()
       Button("Not Now") { model.calendarMonitor.dismiss(meeting) }
       Button("Record…") { model.calendarPrompt = meeting }
-        .primaryAction().disabled(model.isBusy || model.isRecording)
+        .buttonStyle(.bordered).disabled(model.isBusy || model.isRecording)
     }.padding(16).controlSurface().padding(12)
   }
 
@@ -367,7 +368,7 @@ private struct TranscriptView: View {
             }
           }.padding(.vertical, 6)
             .disabled(model.isBusy || model.isRecording)
-        }.listStyle(.plain)
+        }.listStyle(.plain).scrollContentBackground(.hidden)
       }
       Divider()
       Text(
@@ -375,6 +376,8 @@ private struct TranscriptView: View {
       )
       .font(.caption).foregroundStyle(.secondary).padding()
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background(Color(nsColor: .windowBackgroundColor))
   }
 
   @ViewBuilder
@@ -471,7 +474,7 @@ private struct TranscriptView: View {
             }.id(utterance.id)
           }
         }.padding(28).padding(.bottom, 100).frame(maxWidth: 860).frame(maxWidth: .infinity)
-      }.background(.background)
+      }.background(Color(nsColor: .windowBackgroundColor))
         .clipped()
         .overlay(alignment: .bottom) {
           TranscriptPlaybackControls(model: model, meeting: meeting)
@@ -546,7 +549,7 @@ private struct ReprocessTranscriptView: View {
       Text("Reprocess Transcript").font(.title2)
       Form {
         DiarizationOptionsView(quality: $quality, speakerCount: $speakerCount)
-      }.formStyle(.grouped)
+      }.formStyle(.grouped).scrollContentBackground(.hidden)
       Text(
         "Creates a separate transcript using the retained recordings. The original and its manual speaker assignments are preserved; new speaker numbers start without names."
       )
@@ -563,6 +566,7 @@ private struct ReprocessTranscriptView: View {
         }.keyboardShortcut(.defaultAction).disabled(model.isBusy || model.isRecording)
       }
     }.padding(24).frame(width: 500, height: 390)
+      .background(Color(nsColor: .windowBackgroundColor))
       .onAppear {
         quality = meeting.transcriptionOptions?.quality ?? model.defaultQuality
         speakerCount = meeting.transcriptionOptions?.expectedSystemSpeakers ?? 0

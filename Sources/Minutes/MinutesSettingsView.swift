@@ -83,7 +83,9 @@ struct MinutesSettingsView: View {
             Button("Choose Folder…") { model.chooseExportDirectory() }
               .disabled(model.isBusy || model.isRecording)
           }
-        }.formStyle(.grouped).tabItem { Label("General", systemImage: "gearshape") }
+        }.formStyle(.grouped).scrollContentBackground(.hidden).tabItem {
+          Label("General", systemImage: "gearshape")
+        }
         Form {
           Section("Saved Speakers") {
             if model.savedSpeakers.isEmpty {
@@ -107,7 +109,9 @@ struct MinutesSettingsView: View {
             )
             .font(.caption).foregroundStyle(.secondary)
           }
-        }.formStyle(.grouped).tabItem { Label("Speakers", systemImage: "person.2") }
+        }.formStyle(.grouped).scrollContentBackground(.hidden).tabItem {
+          Label("Speakers", systemImage: "person.2")
+        }
         Form {
           Section("Speaker Analysis") {
             DiarizationOptionsView(
@@ -134,9 +138,12 @@ struct MinutesSettingsView: View {
             )
             .font(.caption).foregroundStyle(.secondary)
           }
-        }.formStyle(.grouped).tabItem { Label("Transcription", systemImage: "waveform") }
+        }.formStyle(.grouped).scrollContentBackground(.hidden).tabItem {
+          Label("Transcription", systemImage: "waveform")
+        }
       }
     }.frame(width: 600, height: 590)
+      .background(Color(nsColor: .windowBackgroundColor))
   }
 
   private var calendarSources: [String] {

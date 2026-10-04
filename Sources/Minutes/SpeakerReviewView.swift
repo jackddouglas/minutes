@@ -99,6 +99,7 @@ struct SpeakerReviewView: View {
       }
     }
     .padding(24).frame(width: 640, height: 620)
+    .background(Color(nsColor: .windowBackgroundColor))
     .task(id: current?.id) {
       model.playback.pause()
       assignWholeSpeaker = false
