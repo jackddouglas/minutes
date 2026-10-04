@@ -198,7 +198,7 @@ struct ContentView: View {
       }
     }
     .background {
-      Rectangle().fill(.bar).ignoresSafeArea(.container, edges: .top)
+      Color(nsColor: .windowBackgroundColor).ignoresSafeArea(.container, edges: .top)
     }
   }
 
@@ -256,7 +256,7 @@ struct ContentView: View {
           HStack {
             Spacer()
             Button("Start Recording", systemImage: "record.circle") { model.start() }
-              .buttonStyle(.borderedProminent).controlSize(.large)
+              .primaryAction().controlSize(.large)
               .keyboardShortcut(.defaultAction).disabled(!model.canStart)
           }
         }
@@ -268,7 +268,7 @@ struct ContentView: View {
             }
           }
         }
-      }.formStyle(.grouped)
+      }.formStyle(.grouped).scrollContentBackground(.hidden)
     }.frame(maxWidth: 760).frame(maxWidth: .infinity)
       .background(Color(nsColor: .windowBackgroundColor))
       .disabled(model.isBusy || model.isRecording)
@@ -300,7 +300,7 @@ struct ContentView: View {
       Spacer()
       Button("Not Now") { model.calendarMonitor.dismiss(meeting) }
       Button("Record…") { model.calendarPrompt = meeting }
-        .buttonStyle(.borderedProminent).disabled(model.isBusy || model.isRecording)
+        .primaryAction().disabled(model.isBusy || model.isRecording)
     }.padding(16).controlSurface().padding(12)
   }
 
