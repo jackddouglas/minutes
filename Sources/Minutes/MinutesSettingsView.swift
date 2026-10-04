@@ -1,7 +1,9 @@
+import ServiceManagement
 import SwiftUI
 
 struct MinutesSettingsView: View {
   @Bindable var model: AppModel
+  @Bindable var preferences: AppPreferences
   @ViewState private var newSpeakerName = ""
   @ViewState private var choosingCalendars = false
 
@@ -9,6 +11,22 @@ struct MinutesSettingsView: View {
     VStack(spacing: 0) {
       TabView {
         Form {
+          Section("Startup") {
+            Toggle(
+              "Open at login",
+              isOn: Binding(
+                get: { preferences.opensAtLogin },
+                set: { preferences.setOpenAtLogin($0) })
+            )
+            .disabled(preferences.changingLogin)
+            if preferences.loginStatus == .requiresApproval {
+              Button("Allow in Login Items…") { SMAppService.openSystemSettingsLoginItems() }
+            }
+            if let error = preferences.loginError {
+              Text(error).font(.caption).foregroundStyle(.red)
+            }
+            Toggle("Hide Dock icon", isOn: $preferences.menuBarOnly)
+          }
           Section("Calendar") {
             Toggle(
               "Detect Google Meet meetings",
@@ -25,10 +43,6 @@ struct MinutesSettingsView: View {
               )
               .font(.caption).foregroundStyle(.secondary)
             }
-            Text(
-              "Uses calendars synced to the macOS Calendar app. Minutes keeps watching from the menu bar when its window is closed. Recording starts only after you confirm; your calendar is never changed."
-            )
-            .font(.caption).foregroundStyle(.secondary)
             Button("Refresh Calendar") { model.calendarMonitor.refresh() }
               .disabled(!model.calendarMonitor.enabled)
           }
@@ -114,12 +128,7 @@ struct MinutesSettingsView: View {
         }
         Form {
           Section("Speaker Analysis") {
-            DiarizationOptionsView(
-              quality: $model.defaultQuality, speakerCount: $model.defaultSystemSpeakers)
-            Text(
-              "Defaults for new recordings and imports. Existing meetings can be reprocessed from Meeting Actions."
-            )
-            .font(.caption).foregroundStyle(.secondary)
+            SpeakerAnalysisPicker(quality: $model.defaultQuality)
           }
           Section("Local Models") {
             LabeledContent("Status", value: model.modelsReady ? "Loaded" : "Not loaded")
@@ -143,6 +152,12 @@ struct MinutesSettingsView: View {
         }
       }
     }.frame(width: 600, height: 590)
+      .onAppear { preferences.refreshLoginStatus() }
+      .onReceive(
+        NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+      ) { _ in
+        preferences.refreshLoginStatus()
+      }
       .background(Color(nsColor: .windowBackgroundColor))
   }
 

@@ -11,30 +11,19 @@ struct MinutesApp: App {
   @Environment(\.openSettings) private var openSettings
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
   @ViewState private var model = AppModel()
+  @ViewState private var preferences = AppPreferences()
+  @Environment(\.scenePhase) private var scenePhase
 
   var body: some Scene {
     Window("Minutes", id: "main") {
       ContentView(model: model)
-        .onAppear {
-          model.calendarMonitor.onOpen = { meeting in
-            openWindow(id: "main")
-            model.calendarPrompt = meeting
-          }
-          model.calendarMonitor.startMonitoring()
-          NSApp.setActivationPolicy(.regular)
-          NSApp.activate(ignoringOtherApps: true)
-          delegate.isWorking = { model.isRecording || model.isBusy }
-          delegate.installPlaybackShortcut {
-            guard !model.isBusy, !model.isRecording,
-              model.selectedMeeting?.isTranscribed == true
-            else { return false }
-            model.togglePlayback()
-            return true
-          }
-        }
+
     }
     .defaultSize(width: 1080, height: 740)
-    .defaultLaunchBehavior(.presented)
+    .defaultLaunchBehavior(preferences.menuBarOnly ? .suppressed : .presented)
+    .onChange(of: scenePhase, initial: true) { _, _ in
+      configureBackgroundServices()
+    }
     .commands {
       CommandGroup(replacing: .appSettings) {
         Button("Settings…") { openSettings() }
@@ -60,21 +49,41 @@ struct MinutesApp: App {
       }
     }
     Settings {
-      MinutesSettingsView(model: model)
+      MinutesSettingsView(model: model, preferences: preferences)
     }.windowResizability(.contentSize)
 
     MenuBarExtra {
-      MinutesMenu(model: model)
+      MinutesMenu(model: model, preferences: preferences)
     } label: {
       Label(
         model.isRecording ? "Minutes — Recording" : "Minutes",
         systemImage: model.isRecording ? "record.circle.fill" : "waveform")
     }
   }
+
+  private func configureBackgroundServices() {
+    model.calendarMonitor.onOpen = { meeting in
+      openWindow(id: "main")
+      model.calendarPrompt = meeting
+      NSApp.activate(ignoringOtherApps: true)
+    }
+    model.calendarMonitor.startMonitoring()
+    NSApp.setActivationPolicy(preferences.menuBarOnly ? .accessory : .regular)
+    delegate.isWorking = { model.isRecording || model.isBusy }
+    delegate.installPlaybackShortcut {
+      guard !model.isBusy, !model.isRecording,
+        model.selectedMeeting?.isTranscribed == true
+      else { return false }
+      model.togglePlayback()
+      return true
+    }
+  }
+
 }
 
 private struct MinutesMenu: View {
   let model: AppModel
+  let preferences: AppPreferences
   @Environment(\.openWindow) private var openWindow
   @Environment(\.openSettings) private var openSettings
 
@@ -135,7 +144,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   func installPlaybackShortcut(_ action: @escaping () -> Bool) {
     togglePlayback = action
-    guard playbackMonitor == nil else { return }
     guard playbackMonitor == nil else { return }
     playbackMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
       let consumed = MainActor.assumeIsolated {

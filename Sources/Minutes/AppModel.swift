@@ -12,6 +12,7 @@ final class AppModel {
     didSet { if selection != oldValue { playback.stop() } }
   }
   var title = ""
+  var recordingSystemSpeakers = 0
   var meetingToDelete: Meeting?
   let calendarMonitor: CalendarMonitor
   var calendarPrompt: CalendarMeeting?
@@ -33,13 +34,8 @@ final class AppModel {
   var defaultQuality: TranscriptionOptions.Quality {
     didSet { preferences.set(defaultQuality.rawValue, forKey: "transcriptionQuality") }
   }
-  var defaultSystemSpeakers: Int {
-    didSet { preferences.set(defaultSystemSpeakers, forKey: "expectedSystemSpeakers") }
-  }
   var defaultTranscriptionOptions: TranscriptionOptions {
-    .init(
-      quality: defaultQuality,
-      expectedSystemSpeakers: defaultSystemSpeakers == 0 ? nil : defaultSystemSpeakers)
+    .init(quality: defaultQuality, expectedSystemSpeakers: nil)
   }
   var modelIdleMinutes: Int {
     didSet {
@@ -78,7 +74,6 @@ final class AppModel {
     defaultQuality =
       TranscriptionOptions.Quality(
         rawValue: preferences.string(forKey: "transcriptionQuality") ?? "") ?? .thorough
-    defaultSystemSpeakers = max(0, min(20, preferences.integer(forKey: "expectedSystemSpeakers")))
     savedSpeakers = preferences.stringArray(forKey: "savedSpeakers") ?? []
     let support =
       supportDirectory
@@ -156,8 +151,11 @@ final class AppModel {
     selection = meeting.id
   }
 
-  func start() {
+  func start(systemSpeakers: Int? = nil) {
     guard canStart else { return }
+    let count = systemSpeakers ?? recordingSystemSpeakers
+    let options = TranscriptionOptions(
+      quality: defaultQuality, expectedSystemSpeakers: count == 0 ? nil : count)
     isBusy = true
     status = "Starting audio capture…"
     Task {
@@ -168,7 +166,7 @@ final class AppModel {
         var meeting = Meeting(
           title: title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? "Untitled meeting" : title)
-        meeting.transcriptionOptions = defaultTranscriptionOptions
+        meeting.transcriptionOptions = options
         let directory = recordingDirectory(meeting)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try retain(meeting)
@@ -176,6 +174,7 @@ final class AppModel {
         activeMeeting = meeting
         recordingStarted = Date()
         isRecording = true
+        recordingSystemSpeakers = 0
         status = "Recording browser audio and your microphone"
       } catch {
         self.error = error.localizedDescription
@@ -231,7 +230,7 @@ final class AppModel {
   func reprocess(_ meeting: Meeting, options: TranscriptionOptions) {
     guard !isBusy && !isRecording else { return }
     isBusy = true
-    status = "Preparing a new transcript…"
+    status = "Reprocessing transcript…"
     Task {
       defer { isBusy = false }
       do {
@@ -239,11 +238,6 @@ final class AppModel {
         let metadata = recordingDirectory(meeting).appendingPathComponent("tracks.json")
         let tracks = try JSONDecoder().decode(AudioTracks.self, from: Data(contentsOf: metadata))
         let result = meeting.reprocessedDraft(options: options)
-        let directory = recordingDirectory(result)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try JSONEncoder().encode(tracks).write(
-          to: directory.appendingPathComponent("tracks.json"), options: .atomic)
-        try retain(result)
         try await process(result, tracks: tracks)
       } catch {
         self.error = error.localizedDescription
@@ -295,6 +289,7 @@ final class AppModel {
     guard !isBusy && !isRecording else { return }
     selection = nil
     title = ""
+    recordingSystemSpeakers = 0
   }
 
   func togglePlayback() {

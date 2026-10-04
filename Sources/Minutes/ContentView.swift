@@ -252,8 +252,7 @@ struct ContentView: View {
           TextField("Meeting name", text: $model.title, prompt: Text("Untitled meeting"))
           BrowserPicker(model: model)
           LabeledContent("Microphone", value: "System default")
-          Text("Records browser audio and your microphone. Use headphones to avoid echo.")
-            .font(.caption).foregroundStyle(.secondary)
+          ParticipantCountPicker(count: $model.recordingSystemSpeakers)
           HStack {
             Spacer()
             Button("Start Recording", systemImage: "record.circle") { model.start() }
@@ -517,23 +516,44 @@ private struct TranscriptView: View {
   }
 }
 
-struct DiarizationOptionsView: View {
+struct ParticipantCountPicker: View {
+  @Binding var count: Int
+
+  var body: some View {
+    Picker("Participants (excluding you)", selection: $count) {
+      Text("Automatic").tag(0)
+      ForEach(1...20, id: \.self) { value in
+        Text("\(value)").tag(value)
+      }
+    }
+  }
+}
+
+struct SpeakerAnalysisPicker: View {
   @Binding var quality: TranscriptionOptions.Quality
-  @Binding var speakerCount: Int
 
   var body: some View {
     Picker("Speaker analysis", selection: $quality) {
       Text("Standard").tag(TranscriptionOptions.Quality.standard)
       Text("Thorough (slower)").tag(TranscriptionOptions.Quality.thorough)
     }
-    Stepper(value: $speakerCount, in: 0...20) {
-      LabeledContent(
-        "System-audio speakers", value: speakerCount == 0 ? "Automatic" : String(speakerCount))
+  }
+}
+
+struct DiarizationOptionsView: View {
+  @Binding var quality: TranscriptionOptions.Quality
+  @Binding var speakerCount: Int
+
+  var body: some View {
+    SpeakerAnalysisPicker(quality: $quality)
+    Picker("Number of speakers", selection: $speakerCount) {
+      Text("Automatic").tag(0)
+      ForEach(1...20, id: \.self) { count in
+        Text("\(count)").tag(count)
+      }
     }
-    Text(
-      "Count only people on the system track, excluding your separate microphone. Set 0 for Automatic. Thorough analysis uses more processing time; results still need review."
-    )
-    .font(.caption).foregroundStyle(.secondary)
+    Text("For this meeting only. Exclude yourself if your microphone was recorded separately.")
+      .font(.caption).foregroundStyle(.secondary)
   }
 }
 
@@ -550,14 +570,10 @@ private struct ReprocessTranscriptView: View {
       Form {
         DiarizationOptionsView(quality: $quality, speakerCount: $speakerCount)
       }.formStyle(.grouped).scrollContentBackground(.hidden)
-      Text(
-        "Creates a separate transcript using the retained recordings. The original and its manual speaker assignments are preserved; new speaker numbers start without names."
-      )
-      .font(.callout).foregroundStyle(.secondary)
       HStack {
         Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
         Spacer()
-        Button("Create New Transcript") {
+        Button("Replace Transcript") {
           model.reprocess(
             meeting,
             options: .init(

@@ -96,7 +96,10 @@ public struct Meeting: Codable, Identifiable, Equatable, Sendable {
     }.map(\.element)
   }
   public func reprocessedDraft(options: TranscriptionOptions) -> Meeting {
-    var result = Meeting(title: title + " (reprocessed)", date: date, duration: duration)
+    var result = self
+    result.utterances = []
+    result.speakerNames = [:]
+    result.transcribedAt = nil
     result.transcriptionOptions = options
     return result
   }

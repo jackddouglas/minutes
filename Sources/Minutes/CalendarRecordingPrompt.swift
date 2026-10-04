@@ -7,6 +7,7 @@ struct CalendarRecordingPrompt: View {
   let meeting: CalendarMeeting
   @Environment(\.dismiss) private var dismiss
   @ViewState private var message: String?
+  @ViewState private var participantCount = 0
 
   var body: some View {
     VStack(alignment: .leading, spacing: 20) {
@@ -19,6 +20,8 @@ struct CalendarRecordingPrompt: View {
           BrowserPicker(model: model)
           Divider()
           LabeledContent("Microphone", value: "System default")
+          Divider()
+          ParticipantCountPicker(count: $participantCount)
         }.padding(8)
       }
       if model.isBusy { ProgressView(model.status).controlSize(.small) }
@@ -26,10 +29,6 @@ struct CalendarRecordingPrompt: View {
         Text("A recording is already in progress. Stop it before starting another.")
           .foregroundStyle(.secondary)
       }
-      Text(
-        "Records browser audio and your microphone. Use headphones to avoid echo."
-      )
-      .font(.callout).foregroundStyle(.secondary)
       if let message { Text(message).foregroundStyle(.red) }
       HStack {
         Button("Not Now", role: .cancel) {
@@ -48,7 +47,7 @@ struct CalendarRecordingPrompt: View {
             return
           }
           model.title = meeting.title
-          model.start()
+          model.start(systemSpeakers: participantCount)
           model.calendarMonitor.dismiss(meeting)
           dismiss()
         }.buttonStyle(.bordered).disabled(!model.canStart)
