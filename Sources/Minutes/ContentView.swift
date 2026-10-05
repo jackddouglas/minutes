@@ -181,7 +181,6 @@ struct ContentView: View {
       if let invitation = model.calendarMonitor.invitations.first {
         calendarBanner(invitation)
       }
-      if model.isRecording || model.isBusy { activityBar }
       if let meeting = model.selectedMeeting, meeting.isTranscribed {
         TranscriptView(model: model, meeting: meeting, showSpeakers: $showSpeakers)
           .id(meeting.id)
@@ -201,6 +200,13 @@ struct ContentView: View {
     .background {
       Color(nsColor: .windowBackgroundColor).ignoresSafeArea(.container, edges: .top)
     }
+    .overlay(alignment: .bottom) {
+      if model.isRecording {
+        recordingControls
+      } else if model.isBusy {
+        activityBar
+      }
+    }
   }
 
   private func beginRename(_ meeting: Meeting) {
@@ -210,24 +216,36 @@ struct ContentView: View {
 
   private var activityBar: some View {
     HStack(spacing: 10) {
-      if model.isRecording {
-        Circle().fill(.red).frame(width: 8, height: 8)
-        Text("Recording")
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-          Text(
-            MarkdownExporter.timestamp(
-              context.date.timeIntervalSince(model.recordingStarted ?? context.date))
-          )
-          .monospacedDigit().foregroundStyle(.secondary)
-        }
-        Spacer()
-        Button("Stop & Transcribe", systemImage: "stop.fill") { model.stop() }
-      } else {
-        ProgressView().controlSize(.small)
-        Text(model.status)
-        Spacer()
+      ProgressView().controlSize(.small)
+      Text(model.status).fixedSize(horizontal: false, vertical: true)
+      Spacer(minLength: 0)
+    }
+    .padding(.horizontal, 20).padding(.vertical, 14)
+    .frame(maxWidth: 520)
+    .controlSurface(cornerRadius: 32, clearGlass: true)
+    .padding(.horizontal, 24).padding(.bottom, 16)
+  }
+
+  private var recordingControls: some View {
+    HStack(spacing: 12) {
+      Circle().fill(.red).frame(width: 8, height: 8).accessibilityHidden(true)
+      Text("Recording").fontWeight(.medium)
+      TimelineView(.periodic(from: .now, by: 1)) { context in
+        Text(
+          MarkdownExporter.timestamp(
+            context.date.timeIntervalSince(model.recordingStarted ?? context.date))
+        )
+        .monospacedDigit().foregroundStyle(.secondary)
+        .accessibilityLabel("Recording duration")
       }
-    }.padding(12).background(.bar)
+      Spacer(minLength: 20)
+      Button("Stop & Transcribe", systemImage: "stop.fill") { model.stop() }
+        .buttonStyle(.bordered)
+    }
+    .padding(.horizontal, 20).padding(.vertical, 14)
+    .frame(maxWidth: 520)
+    .controlSurface(cornerRadius: 32, clearGlass: true)
+    .padding(.horizontal, 24).padding(.bottom, 16)
   }
 
   private var recorder: some View {
@@ -269,6 +287,7 @@ struct ContentView: View {
           }
         }
       }.formStyle(.grouped).scrollContentBackground(.hidden)
+        .contentMargins(.bottom, (model.isRecording || model.isBusy) ? 88 : 0, for: .scrollContent)
     }.frame(maxWidth: 760).frame(maxWidth: .infinity)
       .background(Color(nsColor: .windowBackgroundColor))
       .disabled(model.isBusy || model.isRecording)
@@ -456,10 +475,12 @@ private struct TranscriptView: View {
       }.background(Color(nsColor: .windowBackgroundColor))
         .clipped()
         .overlay(alignment: .bottom) {
-          TranscriptPlaybackControls(model: model, meeting: meeting)
-            .padding(.horizontal, 20).padding(.vertical, 12)
-            .frame(maxWidth: 680).controlSurface(cornerRadius: 32, clearGlass: true)
-            .padding(.horizontal, 24).padding(.bottom, 16)
+          if !model.isRecording && !model.isBusy {
+            TranscriptPlaybackControls(model: model, meeting: meeting)
+              .padding(.horizontal, 20).padding(.vertical, 12)
+              .frame(maxWidth: 680).controlSurface(cornerRadius: 32, clearGlass: true)
+              .padding(.horizontal, 24).padding(.bottom, 16)
+          }
         }
         .inspector(isPresented: $showSpeakers) {
           speakerSidebar(scroll: scroll)
