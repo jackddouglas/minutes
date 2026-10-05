@@ -25,7 +25,7 @@ struct MinutesSettingsView: View {
             if let error = preferences.loginError {
               Text(error).font(.caption).foregroundStyle(.red)
             }
-            Toggle("Hide Dock icon", isOn: $preferences.menuBarOnly)
+            Toggle("Start in menu bar", isOn: $preferences.menuBarOnly)
           }
           Section("Calendar") {
             Toggle(

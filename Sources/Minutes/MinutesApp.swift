@@ -17,6 +17,7 @@ struct MinutesApp: App {
   var body: some Scene {
     Window("Minutes", id: "main") {
       ContentView(model: model)
+        .background(WindowDockPresence())
 
     }
     .defaultSize(width: 1080, height: 740)
@@ -50,6 +51,7 @@ struct MinutesApp: App {
     }
     Settings {
       MinutesSettingsView(model: model, preferences: preferences)
+        .background(WindowDockPresence())
     }.windowResizability(.contentSize)
 
     MenuBarExtra {
@@ -62,13 +64,17 @@ struct MinutesApp: App {
   }
 
   private func configureBackgroundServices() {
+    delegate.showMainWindow = {
+      openWindow(id: "main")
+      NSApp.activate(ignoringOtherApps: true)
+    }
     model.calendarMonitor.onOpen = { meeting in
       openWindow(id: "main")
       model.calendarPrompt = meeting
       NSApp.activate(ignoringOtherApps: true)
     }
     model.calendarMonitor.startMonitoring()
-    NSApp.setActivationPolicy(preferences.menuBarOnly ? .accessory : .regular)
+    WindowDockController.shared.refresh()
     delegate.isWorking = { model.isRecording || model.isBusy }
     delegate.installPlaybackShortcut {
       guard !model.isBusy, !model.isRecording,
@@ -135,11 +141,18 @@ private struct MinutesMenu: View {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
   var isWorking: () -> Bool = { false }
+  var showMainWindow: () -> Void = {}
   private var playbackMonitor: Any?
   private var togglePlayback: (() -> Bool)?
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
     false
+  }
+
+  func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool
+  {
+    showMainWindow()
+    return false
   }
 
   func installPlaybackShortcut(_ action: @escaping () -> Bool) {

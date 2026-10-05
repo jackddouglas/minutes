@@ -8,7 +8,6 @@ final class AppPreferences {
   var menuBarOnly: Bool {
     didSet {
       defaults.set(menuBarOnly, forKey: "menuBarOnly")
-      NSApp.setActivationPolicy(menuBarOnly ? .accessory : .regular)
     }
   }
   private(set) var loginStatus = SMAppService.mainApp.status
