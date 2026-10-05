@@ -79,14 +79,14 @@ final class AppModel {
       ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[
         0
       ]
-      .appendingPathComponent("Scribe", isDirectory: true)
+      .appendingPathComponent("Minutes", isDirectory: true)
     store = MeetingStore(directory: support.appendingPathComponent("Meetings"))
     recordingsDirectory = support.appendingPathComponent("Recordings")
     let saved = preferences.string(forKey: "exportDirectory")
     exportDirectory =
       saved.map { URL(fileURLWithPath: $0, isDirectory: true) }
       ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-      .appendingPathComponent("Scribe")
+      .appendingPathComponent("Minutes")
     do {
       meetings = try store.load()
       selection = meetings.first?.id
@@ -381,9 +381,9 @@ final class AppModel {
     let recordings = recordingsDirectory
     let exports = [
       exportDirectory,
-      FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents/Scribe"),
+      FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents/Minutes"),
     ]
-    let shares = FileManager.default.temporaryDirectory.appendingPathComponent("ScribeShare")
+    let shares = FileManager.default.temporaryDirectory.appendingPathComponent("MinutesShare")
     Task {
       defer { isBusy = false }
       do {

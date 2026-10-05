@@ -625,7 +625,7 @@ private struct TranscriptShare: Transferable {
   static var transferRepresentation: some TransferRepresentation {
     FileRepresentation(exportedContentType: .plainText) { item in
       let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "ScribeShare/\(UUID().uuidString)", isDirectory: true)
+        "MinutesShare/\(UUID().uuidString)", isDirectory: true)
       let url = try MarkdownExporter.write(item.meeting, to: directory)
       return SentTransferredFile(url)
     }

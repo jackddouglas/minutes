@@ -7,10 +7,10 @@ import Testing
 
 // Opt-in, local-only evaluation. Optional system-track URL is supplied through
 // the environment; no personal recording path or transcript is checked in.
-@Test(.enabled(if: ProcessInfo.processInfo.environment["SCRIBE_DIARIZATION_EVAL"] == "1"))
+@Test(.enabled(if: ProcessInfo.processInfo.environment["MINUTES_DIARIZATION_EVAL"] == "1"))
 func compareDiarizationModes() async throws {
   let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-    "scribe-diarization-evaluation-\(UUID().uuidString)")
+    "minutes-diarization-evaluation-\(UUID().uuidString)")
   try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
   let synthetic = directory.appendingPathComponent("three-speakers.caf")
   var writer: AVAudioFile?
@@ -57,7 +57,7 @@ func compareDiarizationModes() async throws {
   }
   writer = nil
   var inputs: [(String, URL)] = [("synthetic", synthetic)]
-  if let source = ProcessInfo.processInfo.environment["SCRIBE_EVAL_SYSTEM_AUDIO"] {
+  if let source = ProcessInfo.processInfo.environment["MINUTES_EVAL_SYSTEM_AUDIO"] {
     let file = try AVAudioFile(forReading: URL(fileURLWithPath: source))
     file.framePosition = AVAudioFramePosition(200 * file.processingFormat.sampleRate)
     let buffer = try #require(

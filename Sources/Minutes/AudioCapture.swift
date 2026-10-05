@@ -127,7 +127,7 @@ final class AudioCapture {
   private var microphone: AVCaptureSession?
   private var sink: AudioSink?
   private var microphoneObserver: NSObjectProtocol?
-  private let queue = DispatchQueue(label: "app.scribe.audio", qos: .userInitiated)
+  private let queue = DispatchQueue(label: "app.minutes.audio", qos: .userInitiated)
   var onFailure: ((String) -> Void)?
 
   func start(applicationID: pid_t, directory: URL) async throws {

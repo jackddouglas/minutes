@@ -6,10 +6,10 @@ import Testing
 @testable import Minutes
 
 // Explicit opt-in: downloads real models and runs Core ML on synthesized speech.
-@Test(.enabled(if: ProcessInfo.processInfo.environment["SCRIBE_INFERENCE_SMOKE"] == "1"))
+@Test(.enabled(if: ProcessInfo.processInfo.environment["MINUTES_INFERENCE_SMOKE"] == "1"))
 func localInferenceAndAutomaticMarkdown() async throws {
   let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-    "scribe-inference-\(UUID().uuidString)", isDirectory: true)
+    "minutes-inference-\(UUID().uuidString)", isDirectory: true)
   try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
   let turns = [
     (
@@ -65,10 +65,10 @@ func localInferenceAndAutomaticMarkdown() async throws {
   print("Inference verification artifact: \(export.path)")
 }
 
-@Test(.enabled(if: ProcessInfo.processInfo.environment["SCRIBE_INFERENCE_SMOKE"] == "1"))
+@Test(.enabled(if: ProcessInfo.processInfo.environment["MINUTES_INFERENCE_SMOKE"] == "1"))
 func pairedImportTranscribesBothVoices() async throws {
   let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-    "scribe-paired-\(UUID().uuidString)", isDirectory: true)
+    "minutes-paired-\(UUID().uuidString)", isDirectory: true)
   try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
   defer { try? FileManager.default.removeItem(at: directory) }
   let remote = directory.appendingPathComponent("system.aiff")

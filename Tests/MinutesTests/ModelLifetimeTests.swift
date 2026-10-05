@@ -44,7 +44,7 @@ import Testing
   #expect(!model.modelsReady)
 }
 
-@Test(.enabled(if: ProcessInfo.processInfo.environment["SCRIBE_MODEL_SMOKE"] == "1"))
+@Test(.enabled(if: ProcessInfo.processInfo.environment["MINUTES_MODEL_SMOKE"] == "1"))
 func realModelsReuseUnloadAndReload() async throws {
   let service = TranscriptionService()
   try await service.prepare { print($0) }

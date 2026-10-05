@@ -22,7 +22,7 @@ import Testing
   #expect(throws: (any Error).self) {
     try playback.load(
       AudioTracks(
-        remote: URL(fileURLWithPath: "/tmp/missing-scribe-\(UUID().uuidString).caf"),
+        remote: URL(fileURLWithPath: "/tmp/missing-minutes-\(UUID().uuidString).caf"),
         microphone: nil, remoteOffset: 0, microphoneOffset: 0))
   }
   #expect(!playback.isPlaying)

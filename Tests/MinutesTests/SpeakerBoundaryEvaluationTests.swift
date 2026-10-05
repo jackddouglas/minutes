@@ -29,7 +29,7 @@ func evaluateSpeakerBoundaries() async throws {
   }
   let modelDirectory = FileManager.default.urls(
     for: .applicationSupportDirectory, in: .userDomainMask)[0]
-    .appendingPathComponent("Scribe/Models")
+    .appendingPathComponent("Minutes/Models")
   let models = try await OfflineDiarizerModels.load(
     from: modelDirectory.appendingPathComponent("Diarization"))
   var config = try TranscriptionService.diarizationConfig(

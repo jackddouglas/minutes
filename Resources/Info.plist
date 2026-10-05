@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key><string>Minutes</string>
-    <key>CFBundleIdentifier</key><string>app.scribe.meetings</string>
+    <key>CFBundleIdentifier</key><string>app.minutes.meetings</string>
     <key>CFBundleName</key><string>Minutes</string>
     <key>CFBundleDisplayName</key><string>Minutes</string>
     <key>CFBundleIconFile</key><string>Minutes</string>

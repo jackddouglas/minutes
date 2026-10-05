@@ -5,7 +5,7 @@ import MinutesCore
 actor TranscriptionService {
   let modelDirectory: URL = FileManager.default.urls(
     for: .applicationSupportDirectory, in: .userDomainMask)[0]
-    .appendingPathComponent("Scribe/Models", isDirectory: true)
+    .appendingPathComponent("Minutes/Models", isDirectory: true)
 
   private var speechModels: AsrModels?
   private var speakerModels: OfflineDiarizerModels?
