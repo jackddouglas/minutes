@@ -71,16 +71,10 @@ final class BrowserAudioTap {
       try check(
         AudioHardwareCreateAggregateDevice(aggregate as CFDictionary, &deviceID),
         "Open browser audio")
-      let sink = self.sink
       try check(
-        AudioDeviceCreateIOProcIDWithBlock(&ioProc, deviceID, queue) {
-          _, input, timestamp, _, _ in
-          guard timestamp.pointee.mFlags.contains(.hostTimeValid),
-            let buffer = AVAudioPCMBuffer(pcmFormat: audioFormat, bufferListNoCopy: input)
-          else { return }
-          sink.consume(
-            buffer, at: AVAudioTime.seconds(forHostTime: timestamp.pointee.mHostTime), of: .audio)
-        }, "Prepare browser audio")
+        AudioDeviceCreateIOProcIDWithBlock(
+          &ioProc, deviceID, queue, Self.makeIOCallback(format: audioFormat, sink: sink)),
+        "Prepare browser audio")
       try check(AudioDeviceStart(deviceID, ioProc), "Record browser audio")
       let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
         Task { @MainActor [weak self] in self?.refreshProcesses() }
@@ -95,6 +89,24 @@ final class BrowserAudioTap {
     } catch {
       stop()
       throw error
+    }
+  }
+
+  // Core Audio invokes this on the capture queue. Constructing the block outside
+  // MainActor prevents it from inheriting start()'s main-thread isolation.
+  nonisolated static func makeIOCallback(
+    format: AVAudioFormat, sink: AudioSink
+  ) -> @Sendable (
+    UnsafePointer<AudioTimeStamp>, UnsafePointer<AudioBufferList>,
+    UnsafePointer<AudioTimeStamp>, UnsafeMutablePointer<AudioBufferList>,
+    UnsafePointer<AudioTimeStamp>
+  ) -> Void {
+    { _, input, timestamp, _, _ in
+      guard timestamp.pointee.mFlags.contains(.hostTimeValid),
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, bufferListNoCopy: input)
+      else { return }
+      sink.consume(
+        buffer, at: AVAudioTime.seconds(forHostTime: timestamp.pointee.mHostTime), of: .audio)
     }
   }
 
