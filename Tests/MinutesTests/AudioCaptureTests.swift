@@ -1,5 +1,4 @@
 import AVFoundation
-import ScreenCaptureKit
 import Testing
 
 @testable import Minutes
@@ -56,4 +55,30 @@ private func sample(at time: Double) throws -> CMSampleBuffer {
 @Test func emptyCaptureFailsExplicitly() {
   let sink = AudioSink(directory: FileManager.default.temporaryDirectory)
   #expect(throws: (any Error).self) { try sink.finish() }
+}
+
+@Test func tapPCMAndMicrophoneUseSharedHostTimeline() throws {
+  let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2))
+  let pcm = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 480))
+  pcm.frameLength = 480
+  for channel in 0..<2 {
+    for frame in 0..<480 { pcm.floatChannelData![channel][frame] = 0.125 }
+  }
+  let sink = AudioSink(directory: directory)
+  let hostTime = AVAudioTime.hostTime(forSeconds: 100)
+  sink.consume(pcm, at: AVAudioTime.seconds(forHostTime: hostTime), of: .audio)
+  // Capture-session timestamps are converted to host time before reaching the sink.
+  sink.consume(try sample(at: 8), of: .microphone, at: 100.25)
+  let tracks = try sink.finish()
+  #expect(abs(tracks.microphoneOffset - 0.25) < 0.0001)
+  let remote = try AVAudioFile(forReading: #require(tracks.remote))
+  #expect(remote.length == 480)
+  #expect(remote.processingFormat.channelCount == 2)
+  let restored = try #require(
+    AVAudioPCMBuffer(pcmFormat: remote.processingFormat, frameCapacity: 480))
+  try remote.read(into: restored)
+  #expect(restored.floatChannelData![1][479] == 0.125)
 }

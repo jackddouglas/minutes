@@ -2,7 +2,6 @@ import AVFoundation
 import AppKit
 import MinutesCore
 import Observation
-import ScreenCaptureKit
 import UniformTypeIdentifiers
 
 @MainActor @Observable
