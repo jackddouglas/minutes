@@ -46,11 +46,12 @@ actor TranscriptionService {
       throw MinutesError.message("Models could not load. Try again.")
     }
     let asr = AsrManager(config: .default)
-    try await asr.initialize(models: models)
+    try await asr.loadModels(models)
     var utterances: [Utterance] = []
     if let remote = tracks.remote {
       await progress("Transcribing the meeting…")
-      let result = try await asr.transcribe(remote, source: .system)
+      var decoderState = TdtDecoderState.make(decoderLayers: await asr.decoderLayerCount)
+      let result = try await asr.transcribe(remote, decoderState: &decoderState)
       let remoteWords = try words(result)
       if !remoteWords.isEmpty {
         await progress("Identifying voices in the meeting…")
@@ -73,7 +74,8 @@ actor TranscriptionService {
     }
     if let microphone = tracks.microphone {
       await progress("Transcribing your microphone…")
-      let result = try await asr.transcribe(microphone, source: .microphone)
+      var decoderState = TdtDecoderState.make(decoderLayers: await asr.decoderLayerCount)
+      let result = try await asr.transcribe(microphone, decoderState: &decoderState)
       utterances += SpeakerAlignment.align(
         words: try words(result), spans: [], offset: tracks.microphoneOffset, fixedSpeaker: "You")
     }
@@ -90,6 +92,9 @@ actor TranscriptionService {
       config.embedding.minSegmentDurationSeconds = 0
     }
     config.clustering.numSpeakers = options.expectedSystemSpeakers
+    // Recover speech that received no speaker votes instead of accepting the
+    // diarizer's arbitrary first-cluster fallback. Preserve evidenced turns.
+    config.zeroVoteReembed = .init(enabled: true, minDurationSeconds: 0.4)
     return config
   }
 

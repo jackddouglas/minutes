@@ -45,3 +45,41 @@ import Testing
   #expect(result.count == 2)
   #expect(result.allSatisfy { $0.speaker == "You" })
 }
+
+@Test func shortTrailingWordUsesNearbySpeakerWithoutSplittingPassage() {
+  let result = SpeakerAlignment.align(
+    words: [
+      .init(text: "I", start: 5.4, end: 5.76),
+      .init(text: "think.", start: 5.76, end: 6.08),
+    ], spans: [.init(speaker: "A", start: 4, end: 5.74)])
+  #expect(result.count == 1)
+  #expect(result.first?.speaker == "A")
+  #expect(result.first?.text == "I think.")
+  #expect(result.first?.end == 6.08)
+}
+
+@Test func gapRepairDoesNotGuessAcrossSpeakersOrLongSilence() {
+  let words = [TimedWord(text: "yes", start: 1.1, end: 1.2)]
+  let competing = SpeakerAlignment.align(
+    words: words,
+    spans: [
+      .init(speaker: "A", start: 0, end: 1),
+      .init(speaker: "B", start: 1.3, end: 2),
+    ])
+  #expect(competing.first?.speaker == "Unassigned")
+  let distant = SpeakerAlignment.align(
+    words: words, spans: [.init(speaker: "A", start: 0, end: 0.5)])
+  #expect(distant.first?.speaker == "Unassigned")
+  let long = SpeakerAlignment.align(
+    words: [.init(text: "uncertain phrase", start: 1.1, end: 2)],
+    spans: [.init(speaker: "A", start: 0, end: 1)])
+  #expect(long.first?.speaker == "Unassigned")
+  let interjection = SpeakerAlignment.align(
+    words: words,
+    spans: [
+      .init(speaker: "A", start: 0, end: 1),
+      .init(speaker: "B", start: 1.1, end: 1.2),
+      .init(speaker: "A", start: 1.3, end: 2),
+    ])
+  #expect(interjection.first?.speaker == "B")
+}
