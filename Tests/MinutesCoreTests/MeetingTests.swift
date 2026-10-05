@@ -115,3 +115,19 @@ import Testing
   #expect(exported != occupied)
   #expect(try String(contentsOf: occupied, encoding: .utf8) == "Personal notes")
 }
+
+@Test func markdownExportOmitsInternalMarkerAndRetainsOwnership() throws {
+  let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  defer { try? FileManager.default.removeItem(at: directory) }
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  let meeting = Meeting(title: "Planning")
+  let url = directory.appendingPathComponent(MarkdownExporter.filename(meeting))
+  #expect(try MarkdownExporter.write(meeting, to: directory) == url)
+  let text = try String(contentsOf: url, encoding: .utf8)
+  #expect(!text.contains("<!--"))
+  #expect(!text.contains(meeting.id.uuidString))
+  #expect(MarkdownExporter.owns(url, meeting: meeting))
+  let moved = directory.appendingPathComponent("Renamed.md")
+  try FileManager.default.moveItem(at: url, to: moved)
+  #expect(MarkdownExporter.owns(moved, meeting: meeting))
+}

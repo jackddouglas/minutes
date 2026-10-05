@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public struct Utterance: Codable, Identifiable, Equatable, Sendable {
@@ -107,6 +108,7 @@ public struct Meeting: Codable, Identifiable, Equatable, Sendable {
 }
 
 public enum MarkdownExporter {
+  private static let meetingAttribute = "app.minutes.meeting-id"
   public static func timestamp(_ seconds: Double) -> String {
     let total = seconds.isFinite ? Int(max(0, min(seconds, 359_999))) : 0
     return total >= 3600
@@ -136,7 +138,6 @@ public enum MarkdownExporter {
         "", escape(utterance.text), "",
       ]
     }
-    lines += ["", "<!-- Scribe meeting: \(meeting.id.uuidString) -->", ""]
     return lines.joined(separator: "\n")
   }
 
@@ -161,10 +162,12 @@ public enum MarkdownExporter {
 
   public static func owns(_ url: URL, meeting: Meeting) -> Bool {
     guard url.isFileURL, url.pathExtension == "md" else { return false }
-    if url.lastPathComponent.hasSuffix("-\(meeting.id.uuidString).md") { return true }
-    guard let text = try? String(contentsOf: url, encoding: .utf8) else { return false }
-    return text.trimmingCharacters(in: .whitespacesAndNewlines)
-      .hasSuffix("<!-- Scribe meeting: \(meeting.id.uuidString) -->")
+    var identifier = [UInt8](repeating: 0, count: 36)
+    let count = getxattr(url.path, meetingAttribute, &identifier, identifier.count, 0, 0)
+    if count == identifier.count {
+      return String(decoding: identifier, as: UTF8.self) == meeting.id.uuidString
+    }
+    return false
   }
 
   public static func destination(_ meeting: Meeting, in directory: URL) -> URL {
@@ -185,7 +188,18 @@ public enum MarkdownExporter {
   public static func write(_ meeting: Meeting, to directory: URL) throws -> URL {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let url = destination(meeting, in: directory)
-    try render(meeting).write(to: url, atomically: true, encoding: .utf8)
+    let temporary = directory.appendingPathComponent(".\(UUID().uuidString).md")
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    try render(meeting).write(to: temporary, atomically: true, encoding: .utf8)
+    let identifier = Array(meeting.id.uuidString.utf8)
+    let result = identifier.withUnsafeBytes {
+      setxattr(temporary.path, meetingAttribute, $0.baseAddress, $0.count, 0, 0)
+    }
+    guard result == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+    // Publish content and ownership together, preserving the previous export on failure.
+    guard rename(temporary.path, url.path) == 0 else {
+      throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+    }
     return url
   }
 
