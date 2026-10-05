@@ -312,22 +312,7 @@ private struct TranscriptView: View {
   @Binding var showSpeakers: Bool
   @ViewState private var speakerToRename: String?
   @ViewState private var passageToRename: UUID?
-  @ViewState private var showReprocess = false
   @ViewState private var speakerName = ""
-
-  private func playableText(_ utterance: Utterance) -> AttributedString {
-    guard let words = utterance.words, !words.isEmpty else {
-      return AttributedString(utterance.text)
-    }
-    var text = AttributedString()
-    for (index, word) in words.enumerated() {
-      if index > 0 { text.append(AttributedString(" ")) }
-      var part = AttributedString(word.text)
-      part.link = URL(string: "scribe-play://word/\(index)")
-      text.append(part)
-    }
-    return text
-  }
 
   private func speakerSidebar(scroll: ScrollViewProxy) -> some View {
     VStack(spacing: 0) {
@@ -422,14 +407,6 @@ private struct TranscriptView: View {
             )
             .monospacedDigit()
           }.font(.subheadline).foregroundStyle(.secondary)
-          if meeting.utterances.contains(where: { $0.words == nil }) {
-            HStack {
-              Text("This transcript has no word timings. Re-transcribe to enable word playback.")
-                .font(.caption).foregroundStyle(.secondary)
-              Button("Re-transcribe…") { showReprocess = true }
-                .disabled(model.isBusy || model.isRecording)
-            }
-          }
           Divider()
           if meeting.utterances.isEmpty {
             Text("No speech was detected in this recording.").foregroundStyle(.secondary)
@@ -455,21 +432,24 @@ private struct TranscriptView: View {
                 }.buttonStyle(.plain).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                   .help("Play from this timestamp").disabled(model.isBusy || model.isRecording)
               }
-              Text(playableText(utterance)).font(.system(size: 16)).lineSpacing(6).textSelection(
-                .enabled
-              )
-              .tint(.primary)
-              .environment(
-                \.openURL,
-                OpenURLAction { url in
-                  guard url.scheme == "scribe-play", let index = Int(url.lastPathComponent),
-                    let words = utterance.words, words.indices.contains(index)
-                  else { return .discarded }
-                  model.play(meeting, from: words[index].start)
-                  return .handled
+              Button {
+                model.play(meeting, from: utterance.start)
+              } label: {
+                Text(utterance.text)
+                  .font(.system(size: 16)).lineSpacing(6)
+                  .frame(maxWidth: .infinity, alignment: .leading)
+                  .contentShape(Rectangle())
+              }
+              .buttonStyle(.plain)
+              .help("Play from the start of this passage")
+              .accessibilityHint("Play from the start of this passage")
+              .disabled(model.isBusy || model.isRecording)
+              .contextMenu {
+                Button("Copy Passage") {
+                  NSPasteboard.general.clearContents()
+                  NSPasteboard.general.setString(utterance.text, forType: .string)
                 }
-              )
-              .frame(maxWidth: .infinity, alignment: .leading)
+              }
             }.id(utterance.id)
           }
         }.padding(28).padding(.bottom, 100).frame(maxWidth: 860).frame(maxWidth: .infinity)
@@ -486,7 +466,6 @@ private struct TranscriptView: View {
             .inspectorColumnWidth(min: 240, ideal: 280, max: 360)
         }
     }
-    .sheet(isPresented: $showReprocess) { ReprocessTranscriptView(model: model, meeting: meeting) }
     .alert(
       passageToRename == nil ? "Rename Speaker" : "Assign This Passage",
       isPresented: Binding(
@@ -591,7 +570,7 @@ private struct ReprocessTranscriptView: View {
 }
 
 // Keep playback observation out of TranscriptView: clock ticks must not rebuild
-// every attributed word link or relayout the scrolling transcript.
+// passage views or relayout the scrolling transcript.
 private struct TranscriptPlaybackControls: View {
   let model: AppModel
   let meeting: Meeting
