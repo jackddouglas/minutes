@@ -1,0 +1,38 @@
+import AppKit
+
+@MainActor
+final class SidebarLayoutProbe: NSObject {
+  static let shared = SidebarLayoutProbe()
+  private var timer: Timer?
+  private var samples: [String] = []
+  private var count = 0
+  private var started = 0.0
+
+  func start() {
+    timer?.invalidate()
+    samples = []
+    count = 0
+    started = ProcessInfo.processInfo.systemUptime
+    tick()
+    timer = Timer.scheduledTimer(timeInterval: 0.01, target: self, selector: #selector(tick), userInfo: nil, repeats: true)
+  }
+
+  @objc private func tick() {
+    func describe(_ view: NSView) -> [String] {
+      var result: [String] = []
+      if let split = view as? NSSplitView {
+        result.append("split \(ObjectIdentifier(split)) width=\(split.frame.width) " + split.subviews.map { "\($0.frame.width):\(split.isSubviewCollapsed($0))" }.joined(separator: ","))
+      }
+      for child in view.subviews { result += describe(child) }
+      return result
+    }
+    if let content = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" })?.contentView {
+      samples.append(String(format: "%.3f ", ProcessInfo.processInfo.systemUptime - started) + describe(content).joined(separator: " | "))
+    }
+    count += 1
+    if count >= 150 {
+      timer?.invalidate()
+      try? samples.joined(separator: "\n").write(toFile: "/private/tmp/minutes-sidebar-probe.txt", atomically: true, encoding: .utf8)
+    }
+  }
+}

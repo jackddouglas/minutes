@@ -7,6 +7,8 @@ struct ContentView: View {
   @Bindable var model: AppModel
   @Environment(\.openSettings) private var openSettings
   @ViewState private var showSpeakers = false
+  @ViewState private var sidebarVisibility: NavigationSplitViewVisibility = .all
+  @ViewState private var isNarrowWindow = false
   @ViewState private var search = ""
   @ViewState private var renamingMeeting: Meeting?
   @ViewState private var meetingName = ""
@@ -24,7 +26,15 @@ struct ContentView: View {
   }
 
   var body: some View {
-    NavigationSplitView {
+    NavigationSplitView(
+      columnVisibility: Binding(
+        get: { sidebarVisibility },
+        set: { visibility in
+          if visibility == .all && isNarrowWindow { showSpeakers = false }
+          sidebarVisibility = visibility
+        }
+      )
+    ) {
       List(selection: $model.selection) {
         ForEach(MeetingDay.group(filteredMeetings)) { day in
           Section(dayTitle(day.date)) {
@@ -69,6 +79,8 @@ struct ContentView: View {
         }
     } detail: {
       meetingDetail
+        // Keep inspector presentation from renegotiating the sidebar's width.
+        .navigationSplitViewColumnWidth(min: 320, ideal: 550)
     }
     .toolbarBackgroundVisibility(Visibility.hidden, for: ToolbarPlacement.windowToolbar)
     .navigationTitle(model.selectedMeeting?.title ?? "New Meeting")
@@ -99,13 +111,24 @@ struct ContentView: View {
             Label("Meeting Actions", systemImage: "ellipsis.circle")
           }.help("Meeting actions").disabled(model.isBusy || model.isRecording)
           if meeting.isTranscribed {
-            Button("Speakers", systemImage: "sidebar.right") { showSpeakers.toggle() }
-              .help(showSpeakers ? "Hide speakers" : "Show speakers")
+            Button("Speakers", systemImage: "sidebar.right") {
+              if !showSpeakers && isNarrowWindow { sidebarVisibility = .detailOnly }
+              showSpeakers.toggle()
+            }
+            .help(showSpeakers ? "Hide speakers" : "Show speakers")
           }
         }
       }
     }
     .frame(minWidth: 840, minHeight: 620)
+    // At compact widths, keep only one sidebar open so native split-view
+    // constraints cannot oscillate while presenting the inspector or overflow.
+    .onGeometryChange(for: Bool.self) { geometry in
+      geometry.size.width < 1080
+    } action: { narrow in
+      isNarrowWindow = narrow
+      if narrow && showSpeakers { sidebarVisibility = .detailOnly }
+    }
     .searchable(text: $search, placement: .sidebar, prompt: "Search meetings")
     .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification))
     { _ in
