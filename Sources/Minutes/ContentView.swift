@@ -176,15 +176,7 @@ struct ContentView: View {
         }
       }.listStyle(.sidebar)
         .navigationSplitViewColumnWidth(min: 230, ideal: 280, max: 380)
-        .safeAreaInset(edge: .bottom) {
-          HStack {
-            Text("\(model.meetings.count) meetings").font(.caption).foregroundStyle(.secondary)
-            Spacer()
-            Button("Settings", systemImage: "gearshape") { openSettings() }
-              .labelStyle(.iconOnly).buttonStyle(.borderless).help("Settings")
-          }.padding(14)
-            .background(.regularMaterial)
-        }
+        .modifier(SidebarFooter(meetingCount: model.meetings.count, openSettings: { openSettings() }))
         .overlay {
           if filteredMeetings.isEmpty && !search.isEmpty {
             ContentUnavailableView.search(text: search)
