@@ -84,7 +84,8 @@ for nested in "$sparkle/Versions/B/Autoupdate" "$sparkle/Versions/B/Updater.app"
 done
 codesign --force --sign "$identity" "${code_args[@]}" "${app_args[@]}" "$app"
 if [[ "$release_build" == 1 ]]; then
-    if ! codesign -d --verbose=2 "$app" 2>&1 | grep -q '^Authority=Developer ID Application:'; then
+    signature_info=$(codesign -d --verbose=2 "$app" 2>&1)
+    if [[ "$signature_info" != *"Authority=Developer ID Application:"* ]]; then
         echo "Release builds require a Developer ID Application certificate." >&2
         exit 1
     fi
