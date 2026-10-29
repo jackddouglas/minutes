@@ -41,8 +41,6 @@ struct AudioSource: Identifiable {
     ].contains(bundleID)
   }
 
-  // Browsers sort first so the default selection is unchanged when a call app
-  // such as Slack or Discord merely sits open in the background.
   @MainActor static func running() -> [AudioSource] {
     NSWorkspace.shared.runningApplications.compactMap { app in
       guard app.activationPolicy == .regular, !app.isTerminated,
@@ -51,7 +49,6 @@ struct AudioSource: Identifiable {
       else { return nil }
       return AudioSource(processID: app.processIdentifier, applicationName: name, kind: kind)
     }.sorted {
-      if $0.kind != $1.kind { return $0.kind == .browser }
       return $0.applicationName.localizedCaseInsensitiveCompare($1.applicationName)
         == .orderedAscending
     }
@@ -67,8 +64,9 @@ struct AudioSourceMenu: View {
       if let selected = model.applications.first(where: { $0.processID == model.sourceID }) {
         Menu {
           Picker("Source", selection: $model.sourceID) {
-            section("Browsers", kind: .browser)
-            section("Call Apps", kind: .callApp)
+            ForEach(model.applications) { app in
+              Text(app.applicationName).tag(app.processID)
+            }
           }.pickerStyle(.inline)
         } label: {
           // A plain style lets the label inherit the meter caption's type.
@@ -85,15 +83,6 @@ struct AudioSourceMenu: View {
       }
     }
     .refreshingAudioSources(model)
-  }
-
-  @ViewBuilder private func section(_ title: String, kind: AudioSource.Kind) -> some View {
-    let apps = model.applications.filter { $0.kind == kind }
-    if !apps.isEmpty {
-      Section(title) {
-        ForEach(apps) { app in Text(app.applicationName).tag(app.processID) }
-      }
-    }
   }
 }
 
