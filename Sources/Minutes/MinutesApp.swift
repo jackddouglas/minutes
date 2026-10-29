@@ -8,6 +8,7 @@ typealias ViewState<Value> = SwiftUI.State<Value>
 @main
 struct MinutesApp: App {
   @Environment(\.openWindow) private var openWindow
+  @ObservedObject private var updater = AppUpdater.shared
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
   @ViewState private var model = AppModel()
   @ViewState private var preferences = AppPreferences()
@@ -24,8 +25,17 @@ struct MinutesApp: App {
     .onChange(of: scenePhase, initial: true) { _, _ in
       configureBackgroundServices()
     }
+    .onChange(of: model.isBusy || model.isRecording) { _, _ in
+      updater.resumeInstallationIfIdle()
+    }
     .commands {
       TranscriptFindCommands()
+      CommandGroup(after: .appInfo) {
+        if updater.isAvailable {
+          Button("Check for Updates…") { updater.checkForUpdates() }
+            .disabled(!updater.canCheckForUpdates || model.isBusy || model.isRecording)
+        }
+      }
       CommandGroup(replacing: .newItem) {
         Button("New Meeting") {
           openWindow(id: "main")
@@ -72,6 +82,8 @@ struct MinutesApp: App {
     model.calendarMonitor.startMonitoring()
     WindowDockController.shared.refresh()
     delegate.isWorking = { model.isRecording || model.isBusy }
+    updater.isWorking = { model.isRecording || model.isBusy }
+    updater.start()
     delegate.installPlaybackShortcut {
       guard !model.isBusy, !model.isRecording,
         model.selectedMeeting?.isTranscribed == true
@@ -87,6 +99,7 @@ private struct MinutesMenu: View {
   let model: AppModel
   let preferences: AppPreferences
   @Environment(\.openWindow) private var openWindow
+  @ObservedObject private var updater = AppUpdater.shared
   @Environment(\.openSettings) private var openSettings
 
   var body: some View {
@@ -123,6 +136,10 @@ private struct MinutesMenu: View {
     Button("Settings…") {
       openSettings()
       NSApp.activate(ignoringOtherApps: true)
+    }
+    if updater.isAvailable {
+      Button("Check for Updates…") { updater.checkForUpdates() }
+        .disabled(!updater.canCheckForUpdates || model.isBusy || model.isRecording)
     }
     Button("Quit Minutes") { NSApp.terminate(nil) }
       .disabled(model.isBusy || model.isRecording)
