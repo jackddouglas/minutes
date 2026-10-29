@@ -31,6 +31,7 @@ final class MicrophonePreview {
     }
     session.addInput(input)
     session.addOutput(output)
+    try CaptureAudioFormat.configure(output, device: device)
     output.setSampleBufferDelegate(meter, queue: queue)
     session.startRunning()
     guard session.isRunning else { throw MinutesError.message("The microphone could not start.") }
@@ -62,8 +63,9 @@ private final class PreviewMeter: NSObject, AVCaptureAudioDataOutputSampleBuffer
     _ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer,
     from connection: AVCaptureConnection
   ) {
-    guard let buffer = try? AVAudioPCMBuffer.copying(sampleBuffer) else { return }
-    accumulator.consume(buffer)
+    guard let buffer = try? AVAudioPCMBuffer.copying(sampleBuffer),
+      let microphone = try? CaptureAudioFormat.microphone(buffer) else { return }
+    accumulator.consume(microphone)
   }
 
   func takeReading() -> RecordingLevel { accumulator.takeReading() }

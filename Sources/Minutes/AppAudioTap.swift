@@ -49,7 +49,13 @@ final class AppAudioTap {
     self.scope = scope
     do {
       processIDs = try matchingProcesses()
-      let description = CATapDescription(stereoMixdownOfProcesses: processIDs)
+      let route = try AppAudioRoute.resolve(processes: processIDs)
+      let description: CATapDescription
+      if let route {
+        description = CATapDescription(processes: processIDs, deviceUID: route.deviceUID, stream: UInt(route.streamIndex))
+      } else {
+        description = CATapDescription(stereoMixdownOfProcesses: processIDs)
+      }
       description.name = "Minutes app audio"
       description.isPrivate = true
       description.isExclusive = false
@@ -64,7 +70,9 @@ final class AppAudioTap {
       var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
       try check(
         AudioObjectGetPropertyData(tapID, &address, 0, nil, &size, &format), "Read audio format")
-      guard let audioFormat = AVAudioFormat(streamDescription: &format) else {
+      try CaptureAudioFormat.validate(format)
+      let layout = AVAudioChannelLayout(layoutTag: kAudioChannelLayoutTag_DiscreteInOrder | format.mChannelsPerFrame)
+      guard let audioFormat = AVAudioFormat(streamDescription: &format, channelLayout: layout) else {
         throw MinutesError.message("The selected app returned an unsupported audio format.")
       }
       let aggregate: [String: Any] = [
@@ -84,7 +92,7 @@ final class AppAudioTap {
         "Open app audio")
       try check(
         AudioDeviceCreateIOProcIDWithBlock(
-          &ioProc, deviceID, queue, Self.makeIOCallback(format: audioFormat, sink: sink)),
+          &ioProc, deviceID, queue, Self.makeIOCallback(format: audioFormat, sink: sink, channels: route?.stereoChannels)),
         "Prepare app audio")
       try check(AudioDeviceStart(deviceID, ioProc), "Record app audio")
       let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
@@ -112,13 +120,20 @@ final class AppAudioTap {
 
   // Core Audio invokes this on the capture queue. Constructing the block outside
   // MainActor prevents it from inheriting start()'s main-thread isolation.
-  nonisolated static func makeIOCallback(format: AVAudioFormat, sink: AudioSink) -> IOCallback {
+  nonisolated static func makeIOCallback(format: AVAudioFormat, sink: AudioSink, channels: [Int]? = nil) -> IOCallback {
     { _, input, timestamp, _, _ in
       guard timestamp.pointee.mFlags.contains(.hostTimeValid),
         let buffer = AVAudioPCMBuffer(pcmFormat: format, bufferListNoCopy: input)
       else { return }
-      sink.consume(
-        buffer, at: AVAudioTime.seconds(forHostTime: timestamp.pointee.mHostTime), of: .audio)
+      do {
+        let captured = try channels.map { try CaptureAudioFormat.stereo(buffer, channels: $0) } ?? buffer
+        sink.consume(
+          captured, at: AVAudioTime.seconds(forHostTime: timestamp.pointee.mHostTime), of: .audio)
+      } catch {
+        guard sink.failure == nil else { return }
+        sink.failure = error
+        sink.onFailure?(error.localizedDescription)
+      }
     }
   }
 

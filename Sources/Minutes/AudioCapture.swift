@@ -17,7 +17,13 @@ extension AVAudioPCMBuffer {
   /// Copies captured audio into PCM, or nil when the sample buffer carries none.
   static func copying(_ sampleBuffer: CMSampleBuffer) throws -> AVAudioPCMBuffer? {
     guard sampleBuffer.isValid, CMSampleBufferDataIsReady(sampleBuffer),
-      let description = sampleBuffer.formatDescription,
+      let description = sampleBuffer.formatDescription
+    else { return nil }
+    guard let raw = CMAudioFormatDescriptionGetStreamBasicDescription(description) else {
+      throw MinutesError.message("The audio device returned no audio format.")
+    }
+    try CaptureAudioFormat.validate(raw.pointee)
+    guard sampleBuffer.numSamples > 0, sampleBuffer.numSamples <= Int(Int32.max),
       let format = AVAudioFormat(cmAudioFormatDescription: description) as AVAudioFormat?,
       let buffer = AVAudioPCMBuffer(
         pcmFormat: format, frameCapacity: AVAudioFrameCount(sampleBuffer.numSamples))
@@ -46,6 +52,8 @@ final class AudioSink: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, @
   let onFailure: (@Sendable (String) -> Void)?
   private var microphoneLevel = RecordingLevelAccumulator()
   private var systemLevel = RecordingLevelAccumulator()
+  private var signal = RecordingLevelAccumulator()
+  private var heardSignal = false
 
   func takeLevels() -> RecordingLevels {
     RecordingLevels(
@@ -74,7 +82,7 @@ final class AudioSink: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, @
     let buffer: AVAudioPCMBuffer
     do {
       guard let converted = try AVAudioPCMBuffer.copying(sampleBuffer) else { return }
-      buffer = converted
+      buffer = outputType == .microphone ? try CaptureAudioFormat.microphone(converted) : converted
     } catch {
       failure = error
       onFailure?(error.localizedDescription)
@@ -87,6 +95,11 @@ final class AudioSink: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, @
     guard failure == nil else { return }
     let format = buffer.format
     do {
+      try CaptureAudioFormat.validate(format.streamDescription.pointee)
+      guard buffer.frameLength > 0 else { return }
+      if let file = files[outputType], file.processingFormat != format {
+        throw MinutesError.message("The audio format changed during recording. " + CaptureAudioFormat.guidance)
+      }
       guard time.isFinite else {
         throw MinutesError.message("The audio device returned an invalid timestamp.")
       }
@@ -101,7 +114,11 @@ final class AudioSink: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, @
       }
       guard let file = files[outputType], let first = firstTimes[outputType] else { return }
       // Preserve silence between callbacks so independent tracks stay synchronized.
-      let expected = AVAudioFramePosition(max(0, (time - first) * format.sampleRate))
+      let elapsedFrames = max(0, (time - first) * format.sampleRate)
+      guard elapsedFrames.isFinite, elapsedFrames < Double(Int64.max) else {
+        throw MinutesError.message("The audio device returned an invalid timestamp.")
+      }
+      let expected = AVAudioFramePosition(elapsedFrames)
       // framePosition can raise an Objective-C exception that Swift catch cannot handle.
       // These files are append-only; count frames only after successful writes instead.
       var gap = expected - writtenFrames[outputType, default: 0]
@@ -121,6 +138,9 @@ final class AudioSink: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, @
         gap -= AVAudioFramePosition(count)
       }
       try file.write(from: buffer)
+      signal.consume(buffer)
+      let peak = signal.takeReading().peak
+      heardSignal = heardSignal || peak > 0
       writtenFrames[outputType, default: 0] += AVAudioFramePosition(buffer.frameLength)
       switch outputType {
       case .audio: systemLevel.consume(buffer)
@@ -138,8 +158,9 @@ final class AudioSink: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, @
     let origin = firstTimes.values.min() ?? 0
     files.removeAll()  // Finalize CAF headers before inference opens them.
     guard remote != nil || microphone != nil else {
+      if let failure { throw failure }
       throw MinutesError.message(
-        "No audio was captured. Check the selected app and microphone permissions.")
+        "No audio was captured. Check the selected app and microphone permissions. \(CaptureAudioFormat.guidance)")
     }
     let tracks = AudioTracks(
       remote: remote, microphone: microphone,
@@ -148,6 +169,9 @@ final class AudioSink: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, @
     try JSONEncoder().encode(tracks).write(
       to: directory.appendingPathComponent("tracks.json"), options: .atomic)
     if let failure { throw failure }
+    guard heardSignal else {
+      throw MinutesError.message("No audio signal was detected. The recording is retained. " + CaptureAudioFormat.guidance)
+    }
     return tracks
   }
 }
@@ -190,6 +214,7 @@ final class AudioCapture {
       }
       session.addInput(input)
       session.addOutput(output)
+      try CaptureAudioFormat.configure(output, device: device)
       output.setSampleBufferDelegate(sink, queue: queue)
       try tap.start(applicationID: applicationID)
       session.startRunning()

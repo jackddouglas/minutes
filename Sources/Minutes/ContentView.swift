@@ -35,64 +35,7 @@ struct ContentView: View {
         }
       )
     ) {
-      List(selection: $model.selection) {
-        ForEach(MeetingDay.group(filteredMeetings)) { day in
-          Section(dayTitle(day.date)) {
-            ForEach(day.meetings) { meeting in
-              let live = meeting.id == model.recordingMeetingID
-              HStack(alignment: .top, spacing: 10) {
-                Image(systemName: meeting.isTranscribed ? "text.bubble" : "waveform")
-                  .foregroundStyle(
-                    live ? AnyShapeStyle(RecorderFinish.orange) : AnyShapeStyle(.secondary)
-                  )
-                  .padding(.top, 2)
-                  .accessibilityLabel(live ? "Recording" : "")
-                VStack(alignment: .leading, spacing: 5) {
-                  Text(meeting.title).fontWeight(.medium).lineLimit(2).help(meeting.title)
-                  HStack {
-                    Text(meeting.date, format: .dateTime.hour().minute())
-                    Text("·")
-                    if live {
-                      TimelineView(.periodic(from: .now, by: 1)) { context in
-                        Text(
-                          MarkdownExporter.timestamp(
-                            context.date.timeIntervalSince(model.recordingStarted ?? context.date)))
-                      }
-                    } else {
-                      Text(MarkdownExporter.timestamp(meeting.duration))
-                    }
-                  }.font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                }
-              }.padding(.vertical, 5).tag(meeting.id)
-                .contextMenu {
-                  Group {
-                    Button("Rename…") { beginRename(meeting) }
-                    Button("Change Recording Date…") { beginDate(meeting) }
-                    Button("Export Markdown…") { model.export(meeting) }
-                    Divider()
-                    Button("Move to Trash…", role: .destructive) { model.meetingToDelete = meeting }
-                  }.disabled(model.isBusy || model.isRecording)
-                }
-                .disabled(model.isBusy)
-            }
-          }
-        }
-      }.listStyle(.sidebar)
-        .navigationSplitViewColumnWidth(min: 230, ideal: 280, max: 380)
-        .safeAreaInset(edge: .bottom) {
-          HStack {
-            Text("\(model.meetings.count) meetings").font(.caption).foregroundStyle(.secondary)
-            Spacer()
-            Button("Settings", systemImage: "gearshape") { openSettings() }
-              .labelStyle(.iconOnly).buttonStyle(.borderless).help("Settings")
-          }.padding(14)
-            .background(.regularMaterial)
-        }
-        .overlay {
-          if filteredMeetings.isEmpty && !search.isEmpty {
-            ContentUnavailableView.search(text: search)
-          }
-        }
+      meetingSidebar
     } detail: {
       meetingDetail
         // Keep inspector presentation from renegotiating the sidebar's width.
@@ -102,77 +45,7 @@ struct ContentView: View {
     // Before and during capture an editable name field stands in for the title. The
     // title stays, empty, because removing it also drops the trailing toolbar layout.
     .navigationTitle(showsNameField ? "" : model.selectedMeeting?.title ?? "")
-    .toolbar {
-      ToolbarItem(placement: .navigation) {
-        Button("New Meeting", systemImage: "square.and.pencil") { model.newMeeting() }
-          .help("New meeting").disabled(model.isBusy || model.isRecording)
-      }
-      if showsNameField {
-        if #available(macOS 26.0, *) {
-          ToolbarItem(placement: .navigation) { MeetingNameField(model: model) }
-            .sharedBackgroundVisibility(.hidden)
-        } else {
-          ToolbarItem(placement: .navigation) { MeetingNameField(model: model) }
-        }
-      }
-      ToolbarItemGroup(placement: .primaryAction) {
-        if model.selectedMeeting == nil {
-          Menu {
-            Button("Single Recording…", systemImage: "waveform") { model.importRecording() }
-            Button("System & Microphone…", systemImage: "waveform.badge.mic") {
-              model.importRecording(paired: true)
-            }
-          } label: {
-            Label("Import Audio", systemImage: "waveform.badge.plus")
-          }
-          .menuIndicator(.hidden)
-          .help("Import audio").disabled(model.isBusy || model.isRecording)
-        }
-        if let meeting = model.selectedMeeting {
-          if meeting.isTranscribed {
-            Button("Review Speakers", systemImage: "person.crop.circle.badge.questionmark") {
-              reviewingMeeting = meeting
-            }.help("Review unresolved speakers").disabled(model.isBusy || model.isRecording)
-            ShareLink(item: TranscriptShare(meeting: meeting), preview: SharePreview(meeting.title))
-              .help("Share transcript").disabled(model.isBusy || model.isRecording)
-          }
-          Menu {
-            Button("Rename…") { beginRename(meeting) }
-            Button("Change Recording Date…") { beginDate(meeting) }
-            if meeting.isTranscribed {
-              Button("Reprocess Transcript…") { reprocessingMeeting = meeting }
-              Button("Export Markdown…") { model.export(meeting) }
-            }
-            Divider()
-            Button("Move to Trash…", role: .destructive) { model.meetingToDelete = meeting }
-          } label: {
-            Label("Meeting Actions", systemImage: "ellipsis.circle")
-          }.help("Meeting actions").disabled(model.isBusy || model.isRecording)
-        }
-      }
-      if #available(macOS 26.0, *) {
-        ToolbarItem(placement: .primaryAction) {
-          MeetingSearchField(text: $search, scope: $searchScope)
-            .frame(minWidth: 180, idealWidth: 240, maxWidth: 320)
-            .glassEffect(.regular, in: .capsule)
-        }.sharedBackgroundVisibility(.hidden)
-        ToolbarSpacer(.fixed, placement: .primaryAction)
-      } else {
-        ToolbarItem(placement: .primaryAction) {
-          MeetingSearchField(text: $search, scope: $searchScope)
-            .frame(minWidth: 180, idealWidth: 240, maxWidth: 320)
-        }
-      }
-      ToolbarItem(placement: .primaryAction) {
-        if model.selectedMeeting?.isTranscribed == true {
-          Button("Speakers", systemImage: "sidebar.right") {
-            if !showSpeakers && isNarrowWindow { sidebarVisibility = .detailOnly }
-            showSpeakers.toggle()
-          }
-          .help(showSpeakers ? "Hide speakers" : "Show speakers")
-        }
-      }
-    }
+    .toolbar { meetingToolbar }
     .frame(minWidth: 840, minHeight: 620)
     // At compact widths, keep only one sidebar open so native split-view
     // constraints cannot oscillate while presenting the inspector or overflow.
@@ -256,6 +129,139 @@ struct ContentView: View {
     } message: {
       Text(model.summaryError ?? model.error ?? "")
     }
+  }
+
+  private var meetingSidebar: some View {
+      List(selection: $model.selection) {
+        ForEach(MeetingDay.group(filteredMeetings)) { day in
+          Section(dayTitle(day.date)) {
+            ForEach(day.meetings) { meeting in
+              let live = meeting.id == model.recordingMeetingID
+              HStack(alignment: .top, spacing: 10) {
+                Image(systemName: meeting.isTranscribed ? "text.bubble" : "waveform")
+                  .foregroundStyle(
+                    live ? AnyShapeStyle(RecorderFinish.orange) : AnyShapeStyle(.secondary)
+                  )
+                  .padding(.top, 2)
+                  .accessibilityLabel(live ? "Recording" : "")
+                VStack(alignment: .leading, spacing: 5) {
+                  Text(meeting.title).fontWeight(.medium).lineLimit(2).help(meeting.title)
+                  HStack {
+                    Text(meeting.date, format: .dateTime.hour().minute())
+                    Text("·")
+                    if live {
+                      TimelineView(.periodic(from: .now, by: 1)) { context in
+                        Text(
+                          MarkdownExporter.timestamp(
+                            context.date.timeIntervalSince(model.recordingStarted ?? context.date)))
+                      }
+                    } else {
+                      Text(MarkdownExporter.timestamp(meeting.duration))
+                    }
+                  }.font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                }
+              }.padding(.vertical, 5).tag(meeting.id)
+                .contextMenu {
+                  Group {
+                    Button("Rename…") { beginRename(meeting) }
+                    Button("Change Recording Date…") { beginDate(meeting) }
+                    Button("Export Markdown…") { model.export(meeting) }
+                    Divider()
+                    Button("Move to Trash…", role: .destructive) { model.meetingToDelete = meeting }
+                  }.disabled(model.isBusy || model.isRecording)
+                }
+                .disabled(model.isBusy)
+            }
+          }
+        }
+      }.listStyle(.sidebar)
+        .navigationSplitViewColumnWidth(min: 230, ideal: 280, max: 380)
+        .safeAreaInset(edge: .bottom) {
+          HStack {
+            Text("\(model.meetings.count) meetings").font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            Button("Settings", systemImage: "gearshape") { openSettings() }
+              .labelStyle(.iconOnly).buttonStyle(.borderless).help("Settings")
+          }.padding(14)
+            .background(.regularMaterial)
+        }
+        .overlay {
+          if filteredMeetings.isEmpty && !search.isEmpty {
+            ContentUnavailableView.search(text: search)
+          }
+        }
+  }
+
+  @ToolbarContentBuilder private var meetingToolbar: some ToolbarContent {
+      ToolbarItem(placement: .navigation) {
+        Button("New Meeting", systemImage: "square.and.pencil") { model.newMeeting() }
+          .help("New meeting").disabled(model.isBusy || model.isRecording)
+      }
+      if showsNameField {
+        if #available(macOS 26.0, *) {
+          ToolbarItem(placement: .navigation) { MeetingNameField(model: model) }
+            .sharedBackgroundVisibility(.hidden)
+        } else {
+          ToolbarItem(placement: .navigation) { MeetingNameField(model: model) }
+        }
+      }
+      ToolbarItemGroup(placement: .primaryAction) {
+        if model.selectedMeeting == nil {
+          Menu {
+            Button("Single Recording…", systemImage: "waveform") { model.importRecording() }
+            Button("System & Microphone…", systemImage: "waveform.badge.mic") {
+              model.importRecording(paired: true)
+            }
+          } label: {
+            Label("Import Audio", systemImage: "waveform.badge.plus")
+          }
+          .menuIndicator(.hidden)
+          .help("Import audio").disabled(model.isBusy || model.isRecording)
+        }
+        if let meeting = model.selectedMeeting {
+          if meeting.isTranscribed {
+            Button("Review Speakers", systemImage: "person.crop.circle.badge.questionmark") {
+              reviewingMeeting = meeting
+            }.help("Review unresolved speakers").disabled(model.isBusy || model.isRecording)
+            ShareLink(item: TranscriptShare(meeting: meeting), preview: SharePreview(meeting.title))
+              .help("Share transcript").disabled(model.isBusy || model.isRecording)
+          }
+          Menu {
+            Button("Rename…") { beginRename(meeting) }
+            Button("Change Recording Date…") { beginDate(meeting) }
+            if meeting.isTranscribed {
+              Button("Reprocess Transcript…") { reprocessingMeeting = meeting }
+              Button("Export Markdown…") { model.export(meeting) }
+            }
+            Divider()
+            Button("Move to Trash…", role: .destructive) { model.meetingToDelete = meeting }
+          } label: {
+            Label("Meeting Actions", systemImage: "ellipsis.circle")
+          }.help("Meeting actions").disabled(model.isBusy || model.isRecording)
+        }
+      }
+      if #available(macOS 26.0, *) {
+        ToolbarItem(placement: .primaryAction) {
+          MeetingSearchField(text: $search, scope: $searchScope)
+            .frame(minWidth: 180, idealWidth: 240, maxWidth: 320)
+            .glassEffect(.regular, in: .capsule)
+        }.sharedBackgroundVisibility(.hidden)
+        ToolbarSpacer(.fixed, placement: .primaryAction)
+      } else {
+        ToolbarItem(placement: .primaryAction) {
+          MeetingSearchField(text: $search, scope: $searchScope)
+            .frame(minWidth: 180, idealWidth: 240, maxWidth: 320)
+        }
+      }
+      ToolbarItem(placement: .primaryAction) {
+        if model.selectedMeeting?.isTranscribed == true {
+          Button("Speakers", systemImage: "sidebar.right") {
+            if !showSpeakers && isNarrowWindow { sidebarVisibility = .detailOnly }
+            showSpeakers.toggle()
+          }
+          .help(showSpeakers ? "Hide speakers" : "Show speakers")
+        }
+      }
   }
 
   private var meetingDetail: some View {

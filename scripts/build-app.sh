@@ -32,7 +32,7 @@ xcrun actool "$PWD/Resources/Minutes.icon" \
     --output-format human-readable-text
 shopt -s nullglob
 for bundle in "$binary_dir/"*.bundle; do
-    cp -R "$bundle" "$app/Contents/Resources/"
+    cp -Rf "$bundle" "$app/Contents/Resources/"
 done
 for library in "$binary_dir/"*.dylib; do
     cp "$library" "$app/Contents/Frameworks/"

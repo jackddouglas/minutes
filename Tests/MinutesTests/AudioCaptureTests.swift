@@ -153,3 +153,62 @@ private final class PositionUnavailableAudioFile: AVAudioFile, @unchecked Sendab
   let remote = try AVAudioFile(forReading: #require(tracks.remote))
   #expect(remote.length == 48_000)
 }
+
+@Test func invalidDeviceFormatsAreRejectedBeforeAVFoundation() throws {
+  var description = AudioStreamBasicDescription()
+  description.mFormatID = kAudioFormatLinearPCM
+  description.mChannelsPerFrame = 4
+  for rate in [0.0, -1, Double.nan, Double.infinity] {
+    description.mSampleRate = rate
+    #expect(throws: (any Error).self) { try CaptureAudioFormat.validate(description) }
+  }
+  description.mSampleRate = 48000
+  try CaptureAudioFormat.validate(description)
+  description.mChannelsPerFrame = 0
+  #expect(throws: (any Error).self) { try CaptureAudioFormat.validate(description) }
+}
+
+@Test func microphoneFindsSignalOnChannelsThreeAndFour() throws {
+  var description = AudioStreamBasicDescription(
+    mSampleRate: 48000, mFormatID: kAudioFormatLinearPCM,
+    mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked | kAudioFormatFlagIsNonInterleaved,
+    mBytesPerPacket: 4, mFramesPerPacket: 1, mBytesPerFrame: 4,
+    mChannelsPerFrame: 4, mBitsPerChannel: 32, mReserved: 0)
+  let layout = try #require(AVAudioChannelLayout(layoutTag: kAudioChannelLayoutTag_Quadraphonic))
+  let format = try #require(AVAudioFormat(streamDescription: &description, channelLayout: layout))
+  let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 480))
+  buffer.frameLength = 480
+  for frame in 0..<480 {
+    buffer.floatChannelData![0][frame] = 0
+    buffer.floatChannelData![1][frame] = 0
+    buffer.floatChannelData![2][frame] = 0.5
+    buffer.floatChannelData![3][frame] = -0.5
+  }
+  let mono = try CaptureAudioFormat.microphone(buffer)
+  #expect(mono.format.channelCount == 1)
+  #expect(mono.frameLength == 480)
+  #expect(mono.floatChannelData![0][479] == 0.5)
+  for frame in 0..<480 { buffer.floatChannelData![3][frame] = 0.75 }
+  let fourthChannel = try CaptureAudioFormat.microphone(buffer)
+  #expect(fourthChannel.floatChannelData![0][0] == 0.75)
+}
+
+@Test func silentRecordingIsRetainedWithRoutingError() throws {
+  let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1))
+  let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 480))
+  buffer.frameLength = 480
+  for frame in 0..<480 { buffer.floatChannelData![0][frame] = 0 }
+  let sink = AudioSink(directory: directory)
+  sink.consume(buffer, at: 100, of: .microphone)
+  #expect(sink.failure == nil)
+  do {
+    _ = try sink.finish()
+    Issue.record("Expected a routing error")
+  } catch {
+    #expect(error.localizedDescription.contains("Audio MIDI Setup"))
+  }
+  #expect(try AVAudioFile(forReading: directory.appendingPathComponent("microphone.caf")).length == 480)
+}
