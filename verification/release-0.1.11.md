@@ -30,3 +30,13 @@ code or credentials were changed.
 Release destination: https://github.com/jackddouglas/minutes/releases/tag/v0.1.11
 Live update installation/relaunch is not tested. Existing 0.1.10 installs require
 one manual upgrade. The running Nix-managed installation remains unchanged.
+
+## Published artifact verification
+
+v0.1.11 was published as the latest stable release on 2026-10-30, with tag
+pointing to e7ca077d87ebdedcabb41930b2abb3560e10b2d2. Both public assets were
+downloaded again and matched the verified local bytes. The latest/download
+appcast URL serves the expected signed feed. The downloaded app passed deep
+strict signature verification, stapler validation, and Gatekeeper assessment
+(source=Notarized Developer ID). The downloaded feed passed Sparkle verification.
+The temporary Tonk draft release and workflow branch were deleted successfully.
