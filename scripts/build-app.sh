@@ -89,6 +89,7 @@ if [[ "$release_build" == 1 ]]; then
         echo "Release builds require a Developer ID Application certificate." >&2
         exit 1
     fi
+    python3 scripts/verify-release-permissions.py "$app"
 fi
 codesign --verify --deep --strict "$app"
 # Mark the bundle changed so Launch Services can invalidate cached metadata/icons.
