@@ -1,0 +1,112 @@
+name: Notarize Minutes
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Draft release tag (for example v0.1.12)
+        required: true
+        type: string
+      build:
+        description: Expected CFBundleVersion
+        required: true
+        type: string
+      sha256:
+        description: SHA-256 of the draft release's Minutes-submit.zip
+        required: true
+        type: string
+
+permissions: {}
+concurrency:
+  group: notarize-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  notarize:
+    runs-on: macos-26
+    timeout-minutes: 30
+    permissions:
+      contents: write # GitHub requires write access to download private draft assets.
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_BUILD: ${{ inputs.build }}
+      ARCHIVE_SHA256: ${{ inputs.sha256 }}
+    steps:
+      - name: Validate inputs and credential availability
+        env:
+          NOTARY_KEY: ${{ secrets.APP_STORE_CONNECT_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$RELEASE_BUILD" =~ ^[1-9][0-9]*$ ]]
+          [[ "$ARCHIVE_SHA256" =~ ^[a-fA-F0-9]{64}$ ]]
+          for name in NOTARY_KEY NOTARY_KEY_ID NOTARY_ISSUER; do
+            [[ -n "${!name}" ]] || { echo "Missing repository notarization secret: $name"; exit 1; }
+          done
+
+      - name: Download and verify the signed release candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = true
+          mkdir -p "$RUNNER_TEMP/minutes-input" "$RUNNER_TEMP/minutes-result"
+          gh release download "$RELEASE_TAG" --pattern Minutes-submit.zip --dir "$RUNNER_TEMP/minutes-input"
+          cd "$RUNNER_TEMP/minutes-input"
+          printf '%s  Minutes-submit.zip\n' "$ARCHIVE_SHA256" | shasum -a 256 -c -
+          ditto -x -k Minutes-submit.zip unpacked
+          app=unpacked/Minutes.app
+          codesign --verify --deep --strict "$app"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" = app.minutes.meetings
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "${RELEASE_TAG#v}"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")" = "$RELEASE_BUILD"
+          signature=$(codesign -d --verbose=2 "$app" 2>&1)
+          [[ "$signature" == *'Authority=Developer ID Application: Tonk Labs LTD (8WVKS2F24C)'* ]]
+          [[ "$signature" == *'runtime'* ]]
+          codesign -d --entitlements - --xml "$app" > entitlements.plist
+          for capability in com.apple.security.device.audio-input com.apple.security.personal-information.calendars; do
+            test "$(/usr/libexec/PlistBuddy -c "Print :$capability" entitlements.plist)" = true
+          done
+
+      - name: Notarize and staple
+        env:
+          APP_STORE_CONNECT_KEY_P8: ${{ secrets.APP_STORE_CONNECT_KEY_P8 }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          umask 077
+          key="$RUNNER_TEMP/minutes-notary-key.p8"
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$APP_STORE_CONNECT_KEY_P8" > "$key"
+          result="$RUNNER_TEMP/minutes-result"
+          xcrun notarytool submit "$RUNNER_TEMP/minutes-input/Minutes-submit.zip" \
+            --key "$key" --key-id "$APP_STORE_CONNECT_KEY_ID" \
+            --issuer "$APP_STORE_CONNECT_ISSUER_ID" --wait --timeout 20m \
+            --output-format json > "$result/notarization.json"
+          python3 - "$result/notarization.json" <<'PY'
+          import json, sys
+          receipt = json.load(open(sys.argv[1]))
+          print('Notarization:', receipt.get('id'), receipt.get('status'))
+          if receipt.get('status') != 'Accepted':
+              raise SystemExit('Apple has not accepted this archive')
+          PY
+          app="$RUNNER_TEMP/minutes-input/unpacked/Minutes.app"
+          xcrun stapler staple "$app"
+          xcrun stapler validate "$app"
+          codesign --verify --deep --strict "$app"
+          spctl --assess --type execute "$app"
+          archive="$result/Minutes-${RELEASE_TAG#v}-macos-arm64.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$archive"
+          shasum -a 256 "$archive" > "$result/SHA256.txt"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: minutes-notarization-${{ inputs.tag }}
+          path: ${{ runner.temp }}/minutes-result/
+          if-no-files-found: warn
+          retention-days: 14
