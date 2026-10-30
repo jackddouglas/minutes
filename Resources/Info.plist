@@ -9,8 +9,8 @@
     <key>CFBundleIconFile</key><string>Minutes</string>
     <key>CFBundleIconName</key><string>Minutes</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.1.11</string>
-    <key>CFBundleVersion</key><string>12</string>
+    <key>CFBundleShortVersionString</key><string>0.1.12</string>
+    <key>CFBundleVersion</key><string>13</string>
     <key>LSMinimumSystemVersion</key><string>15.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSMicrophoneUsageDescription</key><string>Minutes records your microphone alongside meeting audio to include your voice in the transcript.</string>
