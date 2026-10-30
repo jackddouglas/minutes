@@ -126,7 +126,10 @@ final class AppAudioTap {
         let buffer = AVAudioPCMBuffer(pcmFormat: format, bufferListNoCopy: input)
       else { return }
       do {
-        let captured = try channels.map { try CaptureAudioFormat.stereo(buffer, channels: $0) } ?? buffer
+        // A mixdown tap is stereo even when Core Audio labels it discrete.
+        // Device-specific taps still use the explicitly resolved output pair.
+        let stereoChannels = channels ?? (format.channelCount == 2 ? [0, 1] : nil)
+        let captured = try stereoChannels.map { try CaptureAudioFormat.stereo(buffer, channels: $0) } ?? buffer
         sink.consume(
           captured, at: AVAudioTime.seconds(forHostTime: timestamp.pointee.mHostTime), of: .audio)
       } catch {

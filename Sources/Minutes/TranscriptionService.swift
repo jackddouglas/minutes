@@ -49,7 +49,10 @@ actor TranscriptionService {
     let asr = AsrManager(config: .default)
     try await asr.loadModels(models)
     var utterances: [Utterance] = []
-    if let remote = tracks.remote {
+    if let source = tracks.remote {
+      let prepared = try TranscriptionAudio(source)
+      defer { prepared.cleanup() }
+      let remote = prepared.url
       await progress("Transcribing the meeting…")
       var decoderState = TdtDecoderState.make(decoderLayers: await asr.decoderLayerCount)
       let result = try await asr.transcribe(remote, decoderState: &decoderState)
