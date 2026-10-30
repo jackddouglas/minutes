@@ -1,17 +1,32 @@
-# Minutes 0.1.11 (build 12) — prepared, not published
+# Minutes 0.1.11 (build 12)
 
-The release candidate was built with Sparkle enabled and signed with
-Developer ID Application: Tonk Labs LTD (8WVKS2F24C), hardened runtime,
-secure timestamp, and microphone entitlement. Deep strict codesign verification
-passed. Version/build and embedded Sparkle public key match source configuration.
+## Verified release artifacts — 2026-10-30
 
-The submission archive is dist/notarization-v0.1.11/Minutes-submit.zip.
-No notarization credentials were found in the login keychain, environment, or
-Minutes GitHub repository secrets. A notarytool profile is required to continue.
-The app has not been notarized or stapled, and no release has been published.
-Do not distribute this submission archive as the final release artifact.
+- Built from source commit 7f94b431ccd00d1d442a29a66071351689651149, with
+  Sparkle enabled, hardened runtime, secure timestamp, microphone entitlement,
+  and Developer ID Application: Tonk Labs LTD (8WVKS2F24C).
+- Apple notarization Accepted: 2e1e848f-2de7-470e-9035-c20f97fa306c.
+- Used the existing Tonk App Store Connect API key entirely inside GitHub Actions:
+  https://github.com/tonk-labs/tonk/actions/runs/41037759180
+  The key was not exported. Temporary draft input and workflow branch are removed
+  after publication; the receipt remains in dist/notarization-v0.1.11/receipt/.
+- Stapling and staple validation passed; deep strict codesign verification passed.
+- Gatekeeper assessment: accepted, source=Notarized Developer ID.
+- Signed appcast verification passed. CryptoKit independently verified the archive
+  signature against the public key embedded in the app.
+- Appcast build 12 and versioned archive URL verified.
 
-The release signing check now requests verbose certificate output and captures
-it before matching, avoiding the observed grep -q / pipefail SIGPIPE (141).
-Remaining: notarize, staple, regenerate final ZIP and signed appcast, verify,
-push the reviewed commits, tag v0.1.11, publish assets, verify remote digests/feed.
+Final artifacts under dist/releases/v0.1.11/:
+
+- Minutes-0.1.11-macos-arm64.zip SHA256:
+  f5b147b66ad0b86ba2efc4e68eef94a0583b4583549932d33a199324ef13f602
+- appcast.xml SHA256:
+  fff3afdee211bd4b9ff604acd38349ca4179860eceeda8686b6a4cdfeefac556
+
+The first read-only Actions token could not download the draft input; retry with
+contents:write (required for private draft access) succeeded. No Tonk main-branch
+code or credentials were changed.
+
+Release destination: https://github.com/jackddouglas/minutes/releases/tag/v0.1.11
+Live update installation/relaunch is not tested. Existing 0.1.10 installs require
+one manual upgrade. The running Nix-managed installation remains unchanged.
