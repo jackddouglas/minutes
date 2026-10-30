@@ -31,3 +31,18 @@ Calendar detection was verified live in the corrected Developer ID build, using
 existing user consent and calendar selection. Live browser capture and automatic
 update installation/relaunch were not exercised. Installed /Applications and
 Nix-managed copies were not replaced as part of publication.
+
+## Release notes feed correction
+
+GitHub release notes were initially omitted from Sparkle's feed. Added versioned
+HTML notes and a shared appcast-generation script that requires and embeds them
+before signing. Local release packaging and remote-release instructions use it.
+The 0.1.12 archive and enclosure signature are unchanged.
+
+Corrected appcast SHA-256:
+`991c9a34ddddcb9eee2a28c6362241e4beef9564f86fb80355aeba9c327f5022`.
+GitHub asset digest, API download and fresh versioned download match. The signed
+feed verifies and its embedded description matches the release-note source.
+The latest/download URL initially continued serving the previous cached feed.
+Live check found the installed app already on 0.1.12, so the update-offer layout
+was not re-exercised. No app installation was performed during this correction.

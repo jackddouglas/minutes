@@ -27,11 +27,10 @@ Keychain. The permanent workflow is `.github/workflows/notarize.yml`.
    and a stapled ZIP as an Actions artifact; it does not publish a release.
 5. Download the artifact. Require an Accepted receipt, validate stapling, strict
    code signature, Gatekeeper, version/build, architecture, and entitlements.
-6. Put the final ZIP alone in `dist/releases/vVERSION/` and run Sparkle's
-   `generate_appcast --account app.minutes.meetings --maximum-deltas 0
-   --download-url-prefix https://github.com/jackddouglas/minutes/releases/download/vVERSION/
-   -o dist/releases/vVERSION/appcast.xml dist/releases/vVERSION`.
-   Verify the feed and archive signatures. Never edit the signed feed.
+6. Add concise HTML release notes in `release-notes/VERSION.html`. Put the final ZIP
+   in `dist/releases/vVERSION/` and run `bash scripts/generate-appcast.sh VERSION`.
+   This requires notes, embeds them in the signed feed, and verifies its signature.
+   Verify the archive signature too. Never edit the signed feed after generation.
 7. Replace the draft input asset with the final ZIP and `appcast.xml`, add release
    notes, then publish as latest. Download both public assets and compare hashes;
    verify the latest/download feed resolves to the new build. Record the commit,

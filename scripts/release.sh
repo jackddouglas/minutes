@@ -6,6 +6,7 @@ if [[ $# != 2 ]]; then
     echo "Usage: bash scripts/release.sh VERSION BUILD_NUMBER" >&2
     exit 1
 fi
+[[ -s "release-notes/$1.html" ]] || { echo "Add release-notes/$1.html before releasing." >&2; exit 1; }
 export MINUTES_VERSION=$1 MINUTES_BUILD_NUMBER=$2 MINUTES_RELEASE_BUILD=1 MINUTES_ENABLE_UPDATES=1
 : "${MINUTES_SIGN_IDENTITY:?Set a Developer ID Application signing identity}"
 : "${MINUTES_NOTARY_PROFILE:?Set a notarytool Keychain profile}"
@@ -29,9 +30,5 @@ codesign --verify --deep --strict dist/Minutes.app
 spctl --assess --type execute dist/Minutes.app
 rm "$archive"
 ditto -c -k --sequesterRsrc --keepParent dist/Minutes.app "$archive"
-.build/artifacts/sparkle/Sparkle/bin/generate_appcast \
-    --account app.minutes.meetings --maximum-deltas 0 \
-    --download-url-prefix "https://github.com/jackddouglas/minutes/releases/download/v$MINUTES_VERSION/" \
-    -o "$out/appcast.xml" "$out"
-grep -q 'sparkle-signatures' "$out/appcast.xml"
+bash scripts/generate-appcast.sh "$MINUTES_VERSION"
 echo "Prepared $archive and $out/appcast.xml. Nothing has been published."
