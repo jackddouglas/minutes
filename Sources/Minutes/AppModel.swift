@@ -22,6 +22,9 @@ final class AppModel {
   private(set) var preparedCalendarMeeting: CalendarMeeting?
   var applications: [AudioSource] = []
   var sourceID: Int32 = 0
+  private var explicitSourceBundleID: String?
+  private let runningAudioSources: () -> [AudioSource]
+  private let defaultBrowserBundleID: (URL) -> String?
   var isRecording = false {
     didSet { scheduleModelUnload() }
   }
@@ -91,8 +94,16 @@ final class AppModel {
 
   init(
     supportDirectory: URL? = nil, preferences: UserDefaults = .standard,
-    modelIdleMinuteDuration: Duration = .seconds(60), chatGPT: ChatGPTConnection? = nil
+    modelIdleMinuteDuration: Duration = .seconds(60), chatGPT: ChatGPTConnection? = nil,
+    runningAudioSources: @escaping () -> [AudioSource] = { AudioSource.running() },
+    defaultBrowserBundleID: @escaping (URL) -> String? = { url in
+      NSWorkspace.shared.urlForApplication(toOpen: url).flatMap {
+        Bundle(url: $0)?.bundleIdentifier
+      }
+    }
   ) {
+    self.runningAudioSources = runningAudioSources
+    self.defaultBrowserBundleID = defaultBrowserBundleID
     self.modelIdleMinuteDuration = modelIdleMinuteDuration
     self.preferences = preferences
     self.chatGPT = chatGPT ?? ChatGPTConnection(defaults: preferences)
@@ -161,9 +172,55 @@ final class AppModel {
 
   func refreshSources() {
     guard !isBusy && !isRecording else { return }
-    applications = AudioSource.running()
-    if !applications.contains(where: { $0.processID == sourceID }) {
-      sourceID = applications.first?.processID ?? 0
+    applications = runningAudioSources().sorted {
+      $0.applicationName.localizedCaseInsensitiveCompare($1.applicationName) == .orderedAscending
+    }
+    let rankedIDs = [
+      explicitSourceBundleID,
+      preferredMeetingBrowserBundleID,
+      preferences.string(forKey: "lastAudioSourceBundleID"),
+    ].compactMap { $0 }
+    sourceID =
+      rankedIDs.lazy.compactMap { id in
+        self.applications.first { $0.bundleID == id }?.processID
+      }.first ?? applications.first?.processID ?? 0
+  }
+
+  private var preferredMeetingBrowserBundleID: String? {
+    guard let meeting = preparedCalendarMeeting else { return nil }
+    return preferences.string(forKey: "googleMeetBrowserBundleID")
+      ?? defaultBrowserBundleID(meeting.url)
+  }
+
+  func selectSource(_ processID: Int32) {
+    guard !isBusy, !isRecording,
+      let source = applications.first(where: { $0.processID == processID })
+    else { return }
+    explicitSourceBundleID = source.bundleID
+    sourceID = source.processID
+    preferences.set(source.bundleID, forKey: "lastAudioSourceBundleID")
+    if preparedCalendarMeeting != nil, source.kind == .browser {
+      preferences.set(source.bundleID, forKey: "googleMeetBrowserBundleID")
+    }
+  }
+
+  /// Join in the selected browser, including a temporary browser fallback.
+  var meetingBrowserBundleID: String? {
+    guard preparedCalendarMeeting != nil else { return nil }
+    return applications.first { $0.processID == sourceID && $0.kind == .browser }?.bundleID
+      ?? preferredMeetingBrowserBundleID
+  }
+
+  func joinPreparedMeeting() {
+    guard let meeting = preparedCalendarMeeting else { return }
+    if let bundleID = meetingBrowserBundleID,
+      let applicationURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
+    {
+      NSWorkspace.shared.open(
+        [meeting.url], withApplicationAt: applicationURL,
+        configuration: NSWorkspace.OpenConfiguration())
+    } else {
+      NSWorkspace.shared.open(meeting.url)
     }
   }
 
@@ -401,6 +458,8 @@ final class AppModel {
     title = ""
     recordingSystemSpeakers = 0
     preparedCalendarMeeting = nil
+    explicitSourceBundleID = nil
+    refreshSources()
   }
 
   /// Calendar reminders lead to the ordinary recorder, named after the event.
@@ -409,6 +468,7 @@ final class AppModel {
     newMeeting()
     title = meeting.title
     preparedCalendarMeeting = meeting
+    refreshSources()
     calendarMonitor.dismiss(meeting)
   }
 

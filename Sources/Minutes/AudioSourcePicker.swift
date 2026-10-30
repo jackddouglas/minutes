@@ -6,6 +6,7 @@ struct AudioSource: Identifiable {
 
   let processID: pid_t
   let applicationName: String
+  let bundleID: String
   let kind: Kind
   var id: pid_t { processID }
 
@@ -47,7 +48,8 @@ struct AudioSource: Identifiable {
         let bundleID = app.bundleIdentifier, let kind = kind(of: bundleID),
         let name = app.localizedName
       else { return nil }
-      return AudioSource(processID: app.processIdentifier, applicationName: name, kind: kind)
+      return AudioSource(
+        processID: app.processIdentifier, applicationName: name, bundleID: bundleID, kind: kind)
     }.sorted {
       return $0.applicationName.localizedCaseInsensitiveCompare($1.applicationName)
         == .orderedAscending
@@ -63,7 +65,9 @@ struct AudioSourceMenu: View {
     Group {
       if let selected = model.applications.first(where: { $0.processID == model.sourceID }) {
         Menu {
-          Picker("Source", selection: $model.sourceID) {
+          Picker(
+            "Source", selection: Binding(get: { model.sourceID }, set: { model.selectSource($0) })
+          ) {
             ForEach(model.applications) { app in
               Text(app.applicationName).tag(app.processID)
             }

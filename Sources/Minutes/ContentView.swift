@@ -339,7 +339,7 @@ struct ContentView: View {
           .accessibilityValue(
             model.recordingSystemSpeakers == 0 ? "Automatic" : "\(model.recordingSystemSpeakers)")
           if let meeting = model.preparedCalendarMeeting {
-            Button("Google Meet", systemImage: "video") { NSWorkspace.shared.open(meeting.url) }
+            Button("Google Meet", systemImage: "video") { model.joinPreparedMeeting() }
               .buttonStyle(.bordered).buttonBorderShape(.capsule)
               .help("Join \(meeting.title)")
           }
