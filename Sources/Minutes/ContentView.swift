@@ -775,7 +775,7 @@ struct ParticipantCountPicker: View {
   var body: some View {
     Picker("Participants (excluding you)", selection: $count) {
       Text("Automatic").tag(0)
-      ForEach(1...20, id: \.self) { value in
+      ForEach(1...max(20, count), id: \.self) { value in
         Text("\(value)").tag(value)
       }
     }

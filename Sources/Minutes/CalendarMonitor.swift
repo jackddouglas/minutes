@@ -154,7 +154,14 @@ final class CalendarMonitor: NSObject, UNUserNotificationCenterDelegate {
       else { return nil }
       return CalendarMeeting(
         eventID: event.eventIdentifier ?? event.calendarItemIdentifier,
-        title: event.title ?? "Google Meet", start: event.startDate, end: event.endDate, url: url)
+        title: event.title ?? "Google Meet", start: event.startDate, end: event.endDate, url: url,
+        acceptedOtherParticipantCount: Self.acceptedOtherParticipantCount(
+          (event.attendees ?? []).map {
+            (
+              status: $0.participantStatus, type: $0.participantType,
+              isCurrentUser: $0.isCurrentUser
+            )
+          }))
     }.sorted { $0.start < $1.start }
     // Reconcile cancellations/edits before the user accepts an invitation.
     let valid = Set(upcoming.map(\.id))
@@ -174,6 +181,14 @@ final class CalendarMonitor: NSObject, UNUserNotificationCenterDelegate {
       upcoming.isEmpty
       ? "No Google Meet meetings in the next 24 hours."
       : "Watching \(upcoming.count) Google Meet meeting\(upcoming.count == 1 ? "" : "s") in the next 24 hours."
+  }
+
+  static func acceptedOtherParticipantCount(
+    _ attendees: [(status: EKParticipantStatus, type: EKParticipantType, isCurrentUser: Bool)]
+  ) -> Int {
+    attendees.filter {
+      $0.status == .accepted && !$0.isCurrentUser && $0.type != .room && $0.type != .resource
+    }.count
   }
 
   func dismiss(_ meeting: CalendarMeeting) {

@@ -1,10 +1,12 @@
+import EventKit
 import Foundation
 import MinutesCore
 import Testing
 
 @testable import Minutes
 
-@Test @MainActor func calendarRecordOpensNewMeetingNamedForTheEvent() throws {
+@Test(arguments: [0, 1, 4, 25])
+@MainActor func calendarRecordOpensNewMeetingNamedForTheEvent(acceptedCount: Int) throws {
   let suite = "MinutesTests.\(UUID().uuidString)"
   let preferences = try #require(UserDefaults(suiteName: suite))
   let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
@@ -20,18 +22,23 @@ import Testing
   model.recordingSystemSpeakers = 4
   let event = CalendarMeeting(
     eventID: "standup", title: "Design Review", start: .now, end: .now.addingTimeInterval(1800),
-    url: try #require(URL(string: "https://meet.google.com/abc-defg-hij")))
+    url: try #require(URL(string: "https://meet.google.com/abc-defg-hij")),
+    acceptedOtherParticipantCount: acceptedCount)
   model.calendarMonitor.invitations = [event]
 
   model.prepareRecording(for: event)
 
   #expect(model.selection == nil)
   #expect(model.title == "Design Review")
-  #expect(model.recordingSystemSpeakers == 0)
+  #expect(model.recordingSystemSpeakers == acceptedCount)
   #expect(model.preparedCalendarMeeting == event)
   #expect(model.calendarMonitor.invitations.isEmpty)
 
+  model.recordingSystemSpeakers = 3
+  #expect(model.recordingSystemSpeakers == 3)
+
   model.newMeeting()
+  #expect(model.recordingSystemSpeakers == 0)
   #expect(model.title.isEmpty)
   #expect(model.preparedCalendarMeeting == nil)
 }
@@ -118,4 +125,21 @@ import Testing
   restored.refreshSources()
   #expect(restored.sourceID == 0)
   #expect(!restored.canStart)
+}
+
+@Test @MainActor func calendarParticipantCountUsesOnlyAcceptedOtherPeople() {
+  #expect(CalendarMonitor.acceptedOtherParticipantCount([]) == 0)
+  #expect(
+    CalendarMonitor.acceptedOtherParticipantCount([
+      (.accepted, .person, false),
+      (.accepted, .unknown, false),
+      (.accepted, .person, true),
+      (.accepted, .room, false),
+      (.accepted, .resource, false),
+      (.declined, .person, false),
+      (.tentative, .person, false),
+      (.pending, .person, false),
+      (.unknown, .person, false),
+      (.delegated, .person, false),
+    ]) == 2)
 }

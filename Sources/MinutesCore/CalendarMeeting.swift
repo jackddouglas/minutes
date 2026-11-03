@@ -6,13 +6,18 @@ public struct CalendarMeeting: Identifiable, Equatable, Sendable {
   public let start: Date
   public let end: Date
   public let url: URL
+  public let acceptedOtherParticipantCount: Int
 
-  public init(eventID: String, title: String, start: Date, end: Date, url: URL) {
+  public init(
+    eventID: String, title: String, start: Date, end: Date, url: URL,
+    acceptedOtherParticipantCount: Int = 0
+  ) {
     self.id = "\(eventID)|\(start.timeIntervalSince1970)"
     self.title = title
     self.start = start
     self.end = end
     self.url = url
+    self.acceptedOtherParticipantCount = max(0, acceptedOtherParticipantCount)
   }
 
   public func isDue(at now: Date) -> Bool {

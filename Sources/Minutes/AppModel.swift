@@ -467,6 +467,7 @@ final class AppModel {
     guard !isBusy && !isRecording else { return }
     newMeeting()
     title = meeting.title
+    recordingSystemSpeakers = meeting.acceptedOtherParticipantCount
     preparedCalendarMeeting = meeting
     refreshSources()
     calendarMonitor.dismiss(meeting)
