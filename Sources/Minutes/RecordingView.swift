@@ -120,10 +120,20 @@ struct RecordingView<SystemSource: View, Accessory: View>: View {
               .tracking(-1.5)
               .accessibilityLabel("\(working.label.capitalized), \(working.duration) recorded")
           } else {
-            if let prepared = faceplate.preparedTitle, !isRecording {
-              Text(prepared).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
-                .lineLimit(1).truncationMode(.tail)
-                .accessibilityLabel("Next recording, \(prepared)")
+            if faceplate.reservesPreparedTitle && !isRecording {
+              // Reserved, so choosing a meeting never moves the clock.
+              ZStack(alignment: .leading) {
+                if let prepared = faceplate.preparedTitle {
+                  RecorderPreparedTitle(title: prepared) { faceplate.onTape(.unprepare) }
+                    .transition(
+                      .asymmetric(
+                        insertion: .opacity.combined(with: .offset(y: 10)),
+                        removal: .opacity.combined(with: .offset(y: 6))))
+                }
+              }
+              .frame(height: 16, alignment: .leading)
+              .animation(
+                .spring(response: 0.38, dampingFraction: 0.86), value: faceplate.preparedTitle)
             }
             TimelineView(.periodic(from: .now, by: 1)) { context in
               Text(

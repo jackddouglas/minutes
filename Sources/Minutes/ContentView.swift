@@ -157,7 +157,7 @@ struct ContentView: View {
                           context.date.timeIntervalSince(model.recordingStarted ?? context.date)))
                     }
                   } else {
-                    Text(MarkdownExporter.timestamp(meeting.duration))
+                    Text(MeetingLength.text(meeting.duration))
                   }
                 }.font(.caption).foregroundStyle(.secondary).monospacedDigit()
               }
@@ -186,10 +186,6 @@ struct ContentView: View {
   }
 
   @ToolbarContentBuilder private var meetingToolbar: some ToolbarContent {
-    ToolbarItem(placement: .navigation) {
-      RecordToolbarKey { key in openRecorder(below: key) }
-        .disabled(model.isBusy && !model.isRecording)
-    }
     if showsNameField {
       if #available(macOS 26.0, *) {
         ToolbarItem(placement: .navigation) { MeetingNameField(model: model) }
@@ -610,7 +606,7 @@ private struct TranscriptView: View {
               meeting.date, format: .dateTime.weekday(.wide).month(.wide).day().hour().minute())
             Spacer()
             Text(
-              "\(MarkdownExporter.timestamp(meeting.duration)) · \(Set(meeting.utterances.map(\.speaker).filter { $0 != "Unassigned" }).count) speakers"
+              "\(MeetingLength.text(meeting.duration)) · \(Set(meeting.utterances.map(\.speaker).filter { $0 != "Unassigned" }).count) speakers"
             )
             .monospacedDigit()
           }.font(.subheadline).foregroundStyle(.secondary)
@@ -863,57 +859,6 @@ private struct TranscriptShare: Transferable {
       return SentTransferredFile(url)
     }
   }
-}
-
-/// The library's record key: a small version of the recorder's own key. It
-/// drops the recorder below itself.
-private struct RecordToolbarKey: View {
-  let open: (CGRect?) -> Void
-  @ViewState private var anchor = ScreenAnchor()
-
-  var body: some View {
-    Button {
-      open(anchor.screenFrame)
-    } label: {
-      Circle()
-        .fill(
-          RadialGradient(
-            colors: [Color(white: 0.99), RecorderFinish.ivory, RecorderFinish.lowerIvory],
-            center: UnitPoint(x: 0.35, y: 0.3), startRadius: 0, endRadius: 16)
-        )
-        .overlay(Circle().strokeBorder(.black.opacity(0.25), lineWidth: 0.5))
-        .overlay(Circle().fill(RecorderFinish.orange).frame(width: 8, height: 8))
-        .frame(width: 22, height: 22)
-        .shadow(color: .black.opacity(0.15), radius: 1, y: 1)
-    }
-    .buttonStyle(.plain)
-    .background(ScreenAnchorView(anchor: anchor))
-    .help("Open the recorder")
-    .accessibilityLabel("Open the recorder")
-  }
-}
-
-/// Reports a view's frame in screen coordinates, for panels anchored to it.
-@MainActor
-final class ScreenAnchor {
-  weak var view: NSView?
-
-  var screenFrame: CGRect? {
-    guard let view, let window = view.window else { return nil }
-    return window.convertToScreen(view.convert(view.bounds, to: nil))
-  }
-}
-
-private struct ScreenAnchorView: NSViewRepresentable {
-  let anchor: ScreenAnchor
-
-  func makeNSView(context: Context) -> NSView {
-    let view = NSView()
-    anchor.view = view
-    return view
-  }
-
-  func updateNSView(_ view: NSView, context: Context) { anchor.view = view }
 }
 
 /// While recording, the meeting's page points to the recorder instead of
