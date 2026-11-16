@@ -13,13 +13,12 @@ struct MinutesApp: App {
   @ViewState private var model = AppModel()
   @ViewState private var preferences = AppPreferences()
   @Environment(\.scenePhase) private var scenePhase
-  private let usesRecorderPanel = UserDefaults.standard.bool(
-    forKey: RecorderPanelController.defaultsKey)
 
   var body: some Scene {
     Window("Minutes", id: "main") {
       ContentView(model: model)
         .background(WindowDockPresence())
+        .environment(\.openRecorder, openRecorder)
 
     }
     .defaultSize(width: 1080, height: 740)
@@ -39,12 +38,9 @@ struct MinutesApp: App {
         }
       }
       CommandGroup(replacing: .newItem) {
-        Button("New Meeting") {
-          openWindow(id: "main")
-          model.newMeeting()
-        }
-        .keyboardShortcut("n", modifiers: .command)
-        .disabled(model.isBusy || model.isRecording)
+        Button("New Recording…") { openRecorder() }
+          .keyboardShortcut("n", modifiers: .command)
+          .disabled(model.isBusy || model.isRecording)
         Button("Import Recording…") { model.importRecording() }
           .keyboardShortcut("i", modifiers: .command)
           .disabled(model.isBusy || model.isRecording)
@@ -62,12 +58,12 @@ struct MinutesApp: App {
         .background(WindowDockPresence())
     }.windowResizability(.contentSize)
 
-    MenuBarExtra(isInserted: .constant(!usesRecorderPanel)) {
-      MinutesMenu(model: model, preferences: preferences)
-    } label: {
-      Label(
-        model.isRecording ? "Minutes — Recording" : "Minutes",
-        systemImage: model.isRecording ? "record.circle.fill" : "waveform")
+  }
+
+  private var openRecorder: OpenRecorderAction {
+    OpenRecorderAction { [delegate] key in
+      guard let panel = delegate.recorderPanel else { return }
+      if let key { panel.toggle(below: key) } else { panel.showDocked() }
     }
   }
 
@@ -76,7 +72,7 @@ struct MinutesApp: App {
       openWindow(id: "main")
       NSApp.activate(ignoringOtherApps: true)
     }
-    if usesRecorderPanel && delegate.recorderPanel == nil {
+    if delegate.recorderPanel == nil {
       delegate.recorderPanel = RecorderPanelController(model: model) {
         openWindow(id: "main")
         NSApp.activate(ignoringOtherApps: true)
@@ -84,12 +80,7 @@ struct MinutesApp: App {
     }
     model.calendarMonitor.onOpen = { meeting in
       model.prepareRecording(for: meeting)
-      if let panel = delegate.recorderPanel {
-        panel.showDocked()
-        return
-      }
-      openWindow(id: "main")
-      NSApp.activate(ignoringOtherApps: true)
+      delegate.recorderPanel?.showDocked()
     }
     model.calendarMonitor.startMonitoring()
     WindowDockController.shared.refresh()
@@ -105,62 +96,6 @@ struct MinutesApp: App {
     }
   }
 
-}
-
-private struct MinutesMenu: View {
-  let model: AppModel
-  let preferences: AppPreferences
-  @Environment(\.openWindow) private var openWindow
-  @ObservedObject private var updater = AppUpdater.shared
-  @Environment(\.openSettings) private var openSettings
-
-  var body: some View {
-    Button("Open Minutes") { showWindow() }
-    if model.isRecording {
-      Text("Recording")
-      Button("Stop & Transcribe") { model.stop() }
-        .disabled(model.isBusy)
-    } else if model.isBusy {
-      Text(model.status)
-    } else {
-      Button("New Recording…") {
-        model.newMeeting()
-        showWindow()
-      }
-    }
-    if let error = model.error {
-      Button("Recording or Transcription Needs Attention…") { showWindow() }
-        .help(error)
-    }
-    Divider()
-    if model.calendarMonitor.invitations.isEmpty {
-      Text(model.calendarMonitor.menuStatus)
-    } else {
-      ForEach(model.calendarMonitor.invitations) { meeting in
-        Button("Record \(meeting.title)…") {
-          model.prepareRecording(for: meeting)
-          showWindow()
-        }
-        .disabled(model.isBusy || model.isRecording)
-      }
-    }
-    Divider()
-    Button("Settings…") {
-      openSettings()
-      NSApp.activate(ignoringOtherApps: true)
-    }
-    if updater.isAvailable {
-      Button("Check for Updates…") { updater.checkForUpdates() }
-        .disabled(!updater.canCheckForUpdates || model.isBusy || model.isRecording)
-    }
-    Button("Quit Minutes") { NSApp.terminate(nil) }
-      .disabled(model.isBusy || model.isRecording)
-  }
-
-  private func showWindow() {
-    openWindow(id: "main")
-    NSApp.activate(ignoringOtherApps: true)
-  }
 }
 
 @MainActor

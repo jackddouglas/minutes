@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 struct ContentView: View {
   @Bindable var model: AppModel
   @Environment(\.openSettings) private var openSettings
+  @Environment(\.openRecorder) private var openRecorder
   @ViewState private var showSpeakers = false
   @ViewState private var sidebarVisibility: NavigationSplitViewVisibility = .all
   @ViewState private var isNarrowWindow = false
@@ -132,128 +133,128 @@ struct ContentView: View {
   }
 
   private var meetingSidebar: some View {
-      List(selection: $model.selection) {
-        ForEach(MeetingDay.group(filteredMeetings)) { day in
-          Section(dayTitle(day.date)) {
-            ForEach(day.meetings) { meeting in
-              let live = meeting.id == model.recordingMeetingID
-              HStack(alignment: .top, spacing: 10) {
-                Image(systemName: meeting.isTranscribed ? "text.bubble" : "waveform")
-                  .foregroundStyle(
-                    live ? AnyShapeStyle(RecorderFinish.orange) : AnyShapeStyle(.secondary)
-                  )
-                  .padding(.top, 2)
-                  .accessibilityLabel(live ? "Recording" : "")
-                VStack(alignment: .leading, spacing: 5) {
-                  Text(meeting.title).fontWeight(.medium).lineLimit(2).help(meeting.title)
-                  HStack {
-                    Text(meeting.date, format: .dateTime.hour().minute())
-                    Text("·")
-                    if live {
-                      TimelineView(.periodic(from: .now, by: 1)) { context in
-                        Text(
-                          MarkdownExporter.timestamp(
-                            context.date.timeIntervalSince(model.recordingStarted ?? context.date)))
-                      }
-                    } else {
-                      Text(MarkdownExporter.timestamp(meeting.duration))
+    List(selection: $model.selection) {
+      ForEach(MeetingDay.group(filteredMeetings)) { day in
+        Section(dayTitle(day.date)) {
+          ForEach(day.meetings) { meeting in
+            let live = meeting.id == model.recordingMeetingID
+            HStack(alignment: .top, spacing: 10) {
+              Image(systemName: meeting.isTranscribed ? "text.bubble" : "waveform")
+                .foregroundStyle(
+                  live ? AnyShapeStyle(RecorderFinish.orange) : AnyShapeStyle(.secondary)
+                )
+                .padding(.top, 2)
+                .accessibilityLabel(live ? "Recording" : "")
+              VStack(alignment: .leading, spacing: 5) {
+                Text(meeting.title).fontWeight(.medium).lineLimit(2).help(meeting.title)
+                HStack {
+                  Text(meeting.date, format: .dateTime.hour().minute())
+                  Text("·")
+                  if live {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                      Text(
+                        MarkdownExporter.timestamp(
+                          context.date.timeIntervalSince(model.recordingStarted ?? context.date)))
                     }
-                  }.font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                }
-              }.padding(.vertical, 5).tag(meeting.id)
-                .contextMenu {
-                  Group {
-                    Button("Rename…") { beginRename(meeting) }
-                    Button("Change Recording Date…") { beginDate(meeting) }
-                    Button("Export Markdown…") { model.export(meeting) }
-                    Divider()
-                    Button("Move to Trash…", role: .destructive) { model.meetingToDelete = meeting }
-                  }.disabled(model.isBusy || model.isRecording)
-                }
-                .disabled(model.isBusy)
-            }
+                  } else {
+                    Text(MarkdownExporter.timestamp(meeting.duration))
+                  }
+                }.font(.caption).foregroundStyle(.secondary).monospacedDigit()
+              }
+            }.padding(.vertical, 5).tag(meeting.id)
+              .contextMenu {
+                Group {
+                  Button("Rename…") { beginRename(meeting) }
+                  Button("Change Recording Date…") { beginDate(meeting) }
+                  Button("Export Markdown…") { model.export(meeting) }
+                  Divider()
+                  Button("Move to Trash…", role: .destructive) { model.meetingToDelete = meeting }
+                }.disabled(model.isBusy || model.isRecording)
+              }
+              .disabled(model.isBusy)
           }
         }
-      }.listStyle(.sidebar)
-        .navigationSplitViewColumnWidth(min: 230, ideal: 280, max: 380)
-        .modifier(SidebarFooter(meetingCount: model.meetings.count, openSettings: { openSettings() }))
-        .overlay {
-          if filteredMeetings.isEmpty && !search.isEmpty {
-            ContentUnavailableView.search(text: search)
-          }
+      }
+    }.listStyle(.sidebar)
+      .navigationSplitViewColumnWidth(min: 230, ideal: 280, max: 380)
+      .modifier(SidebarFooter(meetingCount: model.meetings.count, openSettings: { openSettings() }))
+      .overlay {
+        if filteredMeetings.isEmpty && !search.isEmpty {
+          ContentUnavailableView.search(text: search)
         }
+      }
   }
 
   @ToolbarContentBuilder private var meetingToolbar: some ToolbarContent {
-      ToolbarItem(placement: .navigation) {
-        Button("New Meeting", systemImage: "square.and.pencil") { model.newMeeting() }
-          .help("New meeting").disabled(model.isBusy || model.isRecording)
-      }
-      if showsNameField {
-        if #available(macOS 26.0, *) {
-          ToolbarItem(placement: .navigation) { MeetingNameField(model: model) }
-            .sharedBackgroundVisibility(.hidden)
-        } else {
-          ToolbarItem(placement: .navigation) { MeetingNameField(model: model) }
-        }
-      }
-      ToolbarItemGroup(placement: .primaryAction) {
-        if model.selectedMeeting == nil {
-          Menu {
-            Button("Single Recording…", systemImage: "waveform") { model.importRecording() }
-            Button("System & Microphone…", systemImage: "waveform.badge.mic") {
-              model.importRecording(paired: true)
-            }
-          } label: {
-            Label("Import Audio", systemImage: "waveform.badge.plus")
-          }
-          .menuIndicator(.hidden)
-          .help("Import audio").disabled(model.isBusy || model.isRecording)
-        }
-        if let meeting = model.selectedMeeting {
-          if meeting.isTranscribed {
-            Button("Review Speakers", systemImage: "person.crop.circle.badge.questionmark") {
-              reviewingMeeting = meeting
-            }.help("Review unresolved speakers").disabled(model.isBusy || model.isRecording)
-            ShareLink(item: TranscriptShare(meeting: meeting), preview: SharePreview(meeting.title))
-              .help("Share transcript").disabled(model.isBusy || model.isRecording)
-          }
-          Menu {
-            Button("Rename…") { beginRename(meeting) }
-            Button("Change Recording Date…") { beginDate(meeting) }
-            if meeting.isTranscribed {
-              Button("Reprocess Transcript…") { reprocessingMeeting = meeting }
-              Button("Export Markdown…") { model.export(meeting) }
-            }
-            Divider()
-            Button("Move to Trash…", role: .destructive) { model.meetingToDelete = meeting }
-          } label: {
-            Label("Meeting Actions", systemImage: "ellipsis.circle")
-          }.help("Meeting actions").disabled(model.isBusy || model.isRecording)
-        }
-      }
+    ToolbarItem(placement: .navigation) {
+      RecordToolbarKey { key in openRecorder(below: key) }
+        .disabled(model.isBusy && !model.isRecording)
+    }
+    if showsNameField {
       if #available(macOS 26.0, *) {
-        ToolbarItem(placement: .primaryAction) {
-          MeetingSearchField(text: $search, scope: $searchScope)
-            .frame(minWidth: 180, idealWidth: 240, maxWidth: 320)
-            .glassEffect(.regular, in: .capsule)
-        }.sharedBackgroundVisibility(.hidden)
-        ToolbarSpacer(.fixed, placement: .primaryAction)
+        ToolbarItem(placement: .navigation) { MeetingNameField(model: model) }
+          .sharedBackgroundVisibility(.hidden)
       } else {
-        ToolbarItem(placement: .primaryAction) {
-          MeetingSearchField(text: $search, scope: $searchScope)
-            .frame(minWidth: 180, idealWidth: 240, maxWidth: 320)
-        }
+        ToolbarItem(placement: .navigation) { MeetingNameField(model: model) }
       }
-      ToolbarItem(placement: .primaryAction) {
-        if model.selectedMeeting?.isTranscribed == true {
-          Button("Speakers", systemImage: "sidebar.right") {
-            if !showSpeakers && isNarrowWindow { sidebarVisibility = .detailOnly }
-            showSpeakers.toggle()
+    }
+    ToolbarItemGroup(placement: .primaryAction) {
+      if model.selectedMeeting == nil {
+        Menu {
+          Button("Single Recording…", systemImage: "waveform") { model.importRecording() }
+          Button("System & Microphone…", systemImage: "waveform.badge.mic") {
+            model.importRecording(paired: true)
           }
-          .help(showSpeakers ? "Hide speakers" : "Show speakers")
+        } label: {
+          Label("Import Audio", systemImage: "waveform.badge.plus")
         }
+        .menuIndicator(.hidden)
+        .help("Import audio").disabled(model.isBusy || model.isRecording)
       }
+      if let meeting = model.selectedMeeting {
+        if meeting.isTranscribed {
+          Button("Review Speakers", systemImage: "person.crop.circle.badge.questionmark") {
+            reviewingMeeting = meeting
+          }.help("Review unresolved speakers").disabled(model.isBusy || model.isRecording)
+          ShareLink(item: TranscriptShare(meeting: meeting), preview: SharePreview(meeting.title))
+            .help("Share transcript").disabled(model.isBusy || model.isRecording)
+        }
+        Menu {
+          Button("Rename…") { beginRename(meeting) }
+          Button("Change Recording Date…") { beginDate(meeting) }
+          if meeting.isTranscribed {
+            Button("Reprocess Transcript…") { reprocessingMeeting = meeting }
+            Button("Export Markdown…") { model.export(meeting) }
+          }
+          Divider()
+          Button("Move to Trash…", role: .destructive) { model.meetingToDelete = meeting }
+        } label: {
+          Label("Meeting Actions", systemImage: "ellipsis.circle")
+        }.help("Meeting actions").disabled(model.isBusy || model.isRecording)
+      }
+    }
+    if #available(macOS 26.0, *) {
+      ToolbarItem(placement: .primaryAction) {
+        MeetingSearchField(text: $search, scope: $searchScope)
+          .frame(minWidth: 180, idealWidth: 240, maxWidth: 320)
+          .glassEffect(.regular, in: .capsule)
+      }.sharedBackgroundVisibility(.hidden)
+      ToolbarSpacer(.fixed, placement: .primaryAction)
+    } else {
+      ToolbarItem(placement: .primaryAction) {
+        MeetingSearchField(text: $search, scope: $searchScope)
+          .frame(minWidth: 180, idealWidth: 240, maxWidth: 320)
+      }
+    }
+    ToolbarItem(placement: .primaryAction) {
+      if model.selectedMeeting?.isTranscribed == true {
+        Button("Speakers", systemImage: "sidebar.right") {
+          if !showSpeakers && isNarrowWindow { sidebarVisibility = .detailOnly }
+          showSpeakers.toggle()
+        }
+        .help(showSpeakers ? "Hide speakers" : "Show speakers")
+      }
+    }
   }
 
   private var meetingDetail: some View {
@@ -262,20 +263,34 @@ struct ContentView: View {
         calendarBanner(invitation)
       }
       if let recordingID = model.recordingMeetingID, model.selection == recordingID {
-        LiveRecordingView(model: model)
+        RecordingInProgressView(model: model) { openRecorder() }
       } else if let meeting = model.selectedMeeting, meeting.isTranscribed {
         TranscriptView(model: model, meeting: meeting, showSpeakers: $showSpeakers)
           .id(meeting.id)
-      } else if let meeting = model.selectedMeeting, !model.isBusy {
+      } else if let meeting = model.selectedMeeting {
         ContentUnavailableView {
           Label(meeting.title, systemImage: "waveform")
         } description: {
-          Text("This session has not been transcribed.")
+          Text(model.isBusy ? model.status : "This session has not been transcribed.")
         } actions: {
-          Button("Transcribe") { model.retry(meeting) }.disabled(model.isRecording)
+          if !model.isBusy {
+            Button("Transcribe") { model.retry(meeting) }.disabled(model.isRecording)
+          }
         }
-      } else {
-        recorder
+      } else if model.meetings.isEmpty {
+        ContentUnavailableView {
+          Label("No Meetings Yet", systemImage: "waveform")
+        } description: {
+          Text("Record from the menu bar, or with the record key above.")
+        } actions: {
+          Button("New Recording…") { openRecorder() }.disabled(model.isBusy || model.isRecording)
+        }
+      }
+    }
+    // The window is the library: with nothing selected, show the latest meeting.
+    .task(id: model.selection == nil) {
+      if model.selection == nil, let latest = model.meetings.first {
+        model.selection = latest.id
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -315,60 +330,7 @@ struct ContentView: View {
   }
 
   private var showsNameField: Bool {
-    model.selectedMeeting == nil || model.selection == model.recordingMeetingID
-  }
-
-  /// The new-meeting surface is the recorder itself: the meters carry their
-  /// sources and the transport key starts capture.
-  private var recorder: some View {
-    ReadyRecorderView(model: model) {
-      AudioSourceMenu(model: model).disabled(model.isBusy || model.isRecording)
-    } accessory: {
-      VStack(spacing: 24) {
-        HStack(spacing: 8) {
-          Menu {
-            ParticipantCountPicker(count: $model.recordingSystemSpeakers).pickerStyle(.inline)
-          } label: {
-            Label(
-              model.recordingSystemSpeakers == 0 ? "Automatic" : "\(model.recordingSystemSpeakers)",
-              systemImage: "person.2")
-          }
-          .menuStyle(.button).buttonStyle(.bordered).buttonBorderShape(.capsule).fixedSize()
-          .help("Other participants, excluding you")
-          .accessibilityLabel("Other participants")
-          .accessibilityValue(
-            model.recordingSystemSpeakers == 0 ? "Automatic" : "\(model.recordingSystemSpeakers)")
-          if let meeting = model.preparedCalendarMeeting {
-            Button("Google Meet", systemImage: "video") { model.joinPreparedMeeting() }
-              .buttonStyle(.bordered).buttonBorderShape(.capsule)
-              .help("Join \(meeting.title)")
-          }
-        }
-        if !model.calendarMonitor.upcoming.isEmpty {
-          GroupBox("Upcoming Meetings") {
-            VStack(spacing: 0) {
-              ForEach(
-                Array(model.calendarMonitor.upcoming.prefix(3).enumerated()), id: \.element.id
-              ) {
-                index, meeting in
-                if index > 0 { Divider() }
-                HStack {
-                  VStack(alignment: .leading, spacing: 4) {
-                    Text(meeting.title).font(.headline)
-                    Text(meeting.start, format: .dateTime.weekday(.abbreviated).hour().minute())
-                      .foregroundStyle(.secondary)
-                  }
-                  Spacer()
-                  Button("Record…") { model.prepareRecording(for: meeting) }
-                }.padding(8)
-              }
-            }
-          }.frame(maxWidth: 500)
-        }
-      }
-      .disabled(model.isBusy || model.isRecording)
-    }
-    .background(Color(nsColor: .windowBackgroundColor))
+    model.recordingMeetingID != nil && model.selection == model.recordingMeetingID
   }
 
   private func dayTitle(_ date: Date) -> String {
@@ -396,8 +358,11 @@ struct ContentView: View {
       }
       Spacer()
       Button("Not Now") { model.calendarMonitor.dismiss(meeting) }
-      Button("Record…") { model.prepareRecording(for: meeting) }
-        .buttonStyle(.bordered).disabled(model.isBusy || model.isRecording)
+      Button("Record…") {
+        model.prepareRecording(for: meeting)
+        openRecorder()
+      }
+      .buttonStyle(.bordered).disabled(model.isBusy || model.isRecording)
     }.padding(16).controlSurface().padding(12)
   }
 
@@ -896,6 +861,85 @@ private struct TranscriptShare: Transferable {
         "MinutesShare/\(UUID().uuidString)", isDirectory: true)
       let url = try MarkdownExporter.write(item.meeting, to: directory)
       return SentTransferredFile(url)
+    }
+  }
+}
+
+/// The library's record key: a small version of the recorder's own key. It
+/// drops the recorder below itself.
+private struct RecordToolbarKey: View {
+  let open: (CGRect?) -> Void
+  @ViewState private var anchor = ScreenAnchor()
+
+  var body: some View {
+    Button {
+      open(anchor.screenFrame)
+    } label: {
+      Circle()
+        .fill(
+          RadialGradient(
+            colors: [Color(white: 0.99), RecorderFinish.ivory, RecorderFinish.lowerIvory],
+            center: UnitPoint(x: 0.35, y: 0.3), startRadius: 0, endRadius: 16)
+        )
+        .overlay(Circle().strokeBorder(.black.opacity(0.25), lineWidth: 0.5))
+        .overlay(Circle().fill(RecorderFinish.orange).frame(width: 8, height: 8))
+        .frame(width: 22, height: 22)
+        .shadow(color: .black.opacity(0.15), radius: 1, y: 1)
+    }
+    .buttonStyle(.plain)
+    .background(ScreenAnchorView(anchor: anchor))
+    .help("Open the recorder")
+    .accessibilityLabel("Open the recorder")
+  }
+}
+
+/// Reports a view's frame in screen coordinates, for panels anchored to it.
+@MainActor
+final class ScreenAnchor {
+  weak var view: NSView?
+
+  var screenFrame: CGRect? {
+    guard let view, let window = view.window else { return nil }
+    return window.convertToScreen(view.convert(view.bounds, to: nil))
+  }
+}
+
+private struct ScreenAnchorView: NSViewRepresentable {
+  let anchor: ScreenAnchor
+
+  func makeNSView(context: Context) -> NSView {
+    let view = NSView()
+    anchor.view = view
+    return view
+  }
+
+  func updateNSView(_ view: NSView, context: Context) { anchor.view = view }
+}
+
+/// While recording, the meeting's page points to the recorder instead of
+/// holding a second copy of it.
+private struct RecordingInProgressView: View {
+  let model: AppModel
+  let showRecorder: () -> Void
+
+  var body: some View {
+    ContentUnavailableView {
+      Label {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+          Text(
+            MarkdownExporter.timestamp(
+              context.date.timeIntervalSince(model.recordingStarted ?? context.date))
+          )
+          .monospacedDigit()
+        }
+      } icon: {
+        Image(systemName: "record.circle").foregroundStyle(RecorderFinish.orange)
+      }
+    } description: {
+      Text("Recording. The transcript appears here when you stop.")
+    } actions: {
+      Button("Show Recorder", action: showRecorder)
+      Button("Stop & Transcribe") { model.stop() }.disabled(model.isBusy)
     }
   }
 }
