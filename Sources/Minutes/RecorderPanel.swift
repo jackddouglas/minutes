@@ -599,7 +599,7 @@ struct RecorderPanelContent: View {
       working: model.isBusy && !model.isRecording
         ? (
           RecorderWorkingLabel.label(for: model.status),
-          MarkdownExporter.timestamp(latest?.duration ?? 0)
+          RecorderWorkingLabel.clock(for: model.status, latestDuration: latest?.duration ?? 0)
         ) : nil,
       preparedTitle: model.isRecording ? nil : model.preparedCalendarMeeting?.title,
       openLibrary: { drag.openLibrary() })
