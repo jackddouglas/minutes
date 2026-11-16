@@ -1,19 +1,19 @@
 import AppKit
+import MinutesCore
 import OSLog
 import Observation
 import SwiftUI
 
-/// Spike: the recorder as an object that drops from its own menu bar item.
-/// Enabled with `defaults write app.minutes.meetings recorderPanel -bool true`.
+/// The recorder as an object that drops from its own menu bar item. The main
+/// window holds only the library; it opens this same recorder from its toolbar.
 @MainActor
 final class RecorderPanelController: NSObject, NSWindowDelegate {
-  static let defaultsKey = "recorderPanel"
   static let liftScale: CGFloat = 1.02
   private static let log = Logger(subsystem: "app.minutes.meetings", category: "RecorderPanel")
 
   private let model: AppModel
   private let openMainWindow: () -> Void
-  private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+  private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
   private let visibility = RecorderPanelVisibility()
   private let panel: RecorderPanel
   private let hosting: NSHostingView<RecorderPanelContent>
@@ -23,6 +23,12 @@ final class RecorderPanelController: NSObject, NSWindowDelegate {
   private var dragStart: (mouse: CGPoint, origin: CGPoint)?
   private var movingProgrammatically = false
   private var monitors: [Any] = []
+  private var clock: Timer?
+  /// Where the recorder hangs when it was not opened from its menu bar item:
+  /// below the window's record key, or centred on screen. Cleared when the
+  /// recorder is put away or dragged, so the menu bar item is home again.
+  private var customAnchor: ((CGSize) -> (anchor: CGRect, visibleFrame: CGRect))?
+  private var customAnchorKey: CGRect?
 
   init(model: AppModel, openMainWindow: @escaping () -> Void) {
     self.model = model
@@ -41,17 +47,57 @@ final class RecorderPanelController: NSObject, NSWindowDelegate {
     dragRelay.ended = { [weak self] in self?.dragFinished() }
 
     if let button = statusItem.button {
-      button.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Minutes")
+      button.imagePosition = .imageLeading
       button.target = self
       button.action = #selector(statusItemClicked(_:))
       button.sendAction(on: [.leftMouseUp, .rightMouseUp])
     }
+    updateStatusItem()
     observeRecording()
     installDismissMonitors()
   }
 
   /// Opens the recorder below the menu bar item, for example for a calendar event.
-  func showDocked() { apply(.docked) }
+  func showDocked() {
+    customAnchor = nil
+    customAnchorKey = nil
+    apply(.docked)
+  }
+
+  /// Opens or closes the recorder below a key in a window, such as the
+  /// library's record key. `key` is in screen coordinates.
+  func toggle(below key: CGRect) {
+    if mode != .hidden, customAnchorKey == key {
+      apply(.hidden)
+      return
+    }
+    let screen =
+      NSScreen.screens.first { $0.frame.contains(CGPoint(x: key.midX, y: key.midY)) }
+      ?? NSScreen.main
+    let visibleFrame = screen?.visibleFrame ?? key
+    customAnchor = { _ in (key, visibleFrame) }
+    customAnchorKey = key
+    apply(.docked)
+  }
+
+  /// Opens the recorder centred on the screen with the pointer, or puts it
+  /// away when it is open.
+  func toggleCentred() {
+    if mode != .hidden {
+      apply(.hidden)
+      return
+    }
+    let mouse = NSEvent.mouseLocation
+    let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
+    guard let visibleFrame = screen?.visibleFrame else { return }
+    customAnchor = { size in
+      let recorderHeight = size.height - 2 * RecorderPanelPlacement.shadowInset
+      let top = visibleFrame.midY + recorderHeight / 2 + RecorderPanelPlacement.gap
+      return (CGRect(x: visibleFrame.midX, y: top, width: 0, height: 0), visibleFrame)
+    }
+    customAnchorKey = nil
+    apply(.docked)
+  }
 
   // MARK: Status item
 
@@ -66,30 +112,78 @@ final class RecorderPanelController: NSObject, NSWindowDelegate {
 
   private func showMenu() {
     let menu = NSMenu()
-    menu.addItem(withTitle: "Open Minutes", action: #selector(openMinutes), keyEquivalent: "")
-      .target = self
-    menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: "")
-      .target = self
+    menu.autoenablesItems = false
+    menu.addAction("Open Minutes") { [weak self] in self?.openMainWindow() }
+    if model.isRecording {
+      menu.addAction("Stop & Transcribe", enabled: !model.isBusy) { [weak self] in
+        self?.model.stop()
+      }
+    } else if model.isBusy {
+      menu.addAction(model.status, enabled: false) {}
+    } else {
+      menu.addAction("New Recording…") { [weak self] in self?.showDocked() }
+    }
+    if model.error != nil {
+      menu.addAction("Recording or Transcription Needs Attention…") { [weak self] in
+        self?.openMainWindow()
+      }
+    }
     menu.addItem(.separator())
-    menu.addItem(
-      withTitle: "Quit Minutes", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
+    let calendar = model.calendarMonitor
+    if calendar.invitations.isEmpty {
+      menu.addAction(calendar.menuStatus, enabled: false) {}
+    } else {
+      for meeting in calendar.invitations {
+        menu.addAction("Record \(meeting.title)…", enabled: !model.isBusy && !model.isRecording) {
+          [weak self] in
+          self?.model.prepareRecording(for: meeting)
+          self?.showDocked()
+        }
+      }
+    }
+    menu.addItem(.separator())
+    menu.addAction("Settings…") {
+      NSApp.activate(ignoringOtherApps: true)
+      NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+    }
+    let updater = AppUpdater.shared
+    if updater.isAvailable {
+      menu.addAction(
+        "Check for Updates…",
+        enabled: updater.canCheckForUpdates && !model.isBusy && !model.isRecording
+      ) { updater.checkForUpdates() }
+    }
+    menu.addAction("Quit Minutes") { NSApp.terminate(nil) }
     statusItem.menu = menu
     statusItem.button?.performClick(nil)
     statusItem.menu = nil
   }
 
-  @objc private func openMinutes() { openMainWindow() }
-
-  @objc private func openSettings() {
-    NSApp.activate(ignoringOtherApps: true)
-    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-  }
-
-  private func updateStatusImage() {
-    let name = model.isRecording ? "record.circle.fill" : "waveform"
-    statusItem.button?.image = NSImage(
-      systemSymbolName: name,
-      accessibilityDescription: model.isRecording ? "Minutes — Recording" : "Minutes")
+  /// Idle: a waveform. Recording: a red dot and the elapsed time. Busy, for
+  /// example transcribing: an hourglass.
+  private func updateStatusItem() {
+    guard let button = statusItem.button else { return }
+    if model.isRecording {
+      let elapsed = Date().timeIntervalSince(model.recordingStarted ?? Date())
+      let time = MarkdownExporter.timestamp(elapsed)
+      button.image = nil
+      button.attributedTitle = RecorderStatusTitle.recording(time: time)
+      button.setAccessibilityLabel("Minutes, recording \(time)")
+      if clock == nil {
+        clock = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+          MainActor.assumeIsolated { self?.updateStatusItem() }
+        }
+      }
+      return
+    }
+    clock?.invalidate()
+    clock = nil
+    button.attributedTitle = NSAttributedString()
+    let busy = model.isBusy
+    button.image = NSImage(
+      systemSymbolName: busy ? "hourglass" : "waveform",
+      accessibilityDescription: busy ? "Minutes, \(model.status)" : "Minutes")
+    button.setAccessibilityLabel(busy ? "Minutes, \(model.status)" : "Minutes")
   }
 
   // MARK: Modes
@@ -97,6 +191,10 @@ final class RecorderPanelController: NSObject, NSWindowDelegate {
   private func apply(_ next: RecorderPanelMode) {
     let previous = mode
     mode = next
+    if next == .hidden {
+      customAnchor = nil
+      customAnchorKey = nil
+    }
     statusItem.button?.highlight(next == .docked)
     switch next {
     case .hidden where previous != .hidden:
@@ -142,28 +240,30 @@ final class RecorderPanelController: NSObject, NSWindowDelegate {
     }
   }
 
-  /// The point on the recorder's top edge below the menu bar item, in the
-  /// panel's content, which includes the shadow margin.
+  /// The point on the recorder's top edge below its anchor, in the panel's
+  /// content, which includes the shadow margin.
   private func unfoldAnchor(in frame: CGRect) -> UnitPoint {
-    let anchor = statusItem.button?.window.map { item in
-      RecorderPanelPlacement.anchor(
-        for: item.frame, screens: NSScreen.screens.map(\.frame),
-        fallback: (item.screen ?? NSScreen.main)?.visibleFrame ?? frame)
-    }
+    let anchor = anchor(for: frame.size)?.anchor
     let x = ((anchor?.midX ?? frame.midX) - frame.minX) / max(frame.width, 1)
     return UnitPoint(
       x: min(max(x, 0), 1), y: RecorderPanelPlacement.shadowInset / max(frame.height, 1))
   }
 
-  private func dockedFrame(size: CGSize) -> CGRect? {
+  private func anchor(for size: CGSize) -> (anchor: CGRect, visibleFrame: CGRect)? {
+    if let customAnchor { return customAnchor(size) }
     guard let itemWindow = statusItem.button?.window,
       let screen = itemWindow.screen ?? NSScreen.main
     else { return nil }
     let anchor = RecorderPanelPlacement.anchor(
       for: itemWindow.frame, screens: NSScreen.screens.map(\.frame),
       fallback: screen.visibleFrame)
+    return (anchor, screen.visibleFrame)
+  }
+
+  private func dockedFrame(size: CGSize) -> CGRect? {
+    guard let (anchor, visibleFrame) = anchor(for: size) else { return nil }
     return RecorderPanelPlacement.dockedFrame(
-      size: size, below: anchor, visibleFrame: screen.visibleFrame)
+      size: size, below: anchor, visibleFrame: visibleFrame)
   }
 
   private func setFrame(_ frame: CGRect, animated: Bool) {
@@ -191,13 +291,18 @@ final class RecorderPanelController: NSObject, NSWindowDelegate {
   // MARK: Recording
 
   private func observeRecording() {
+    let wasRecording = model.isRecording
     withObservationTracking {
       _ = model.isRecording
+      _ = model.isBusy
+      _ = model.status
     } onChange: { [weak self] in
       Task { @MainActor in
         guard let self else { return }
-        self.updateStatusImage()
-        if self.model.isRecording { self.apply(self.mode.recordingStarted()) }
+        self.updateStatusItem()
+        if self.model.isRecording && !wasRecording {
+          self.apply(self.mode.recordingStarted())
+        }
         self.observeRecording()
       }
     }
@@ -219,8 +324,10 @@ final class RecorderPanelController: NSObject, NSWindowDelegate {
       matching: mask,
       handler: { [weak self] event in
         MainActor.assumeIsolated {
+          // The key that opened the recorder closes it itself.
           guard let self, event.window !== self.panel,
-            event.window !== self.statusItem.button?.window
+            event.window !== self.statusItem.button?.window,
+            self.customAnchorKey?.contains(NSEvent.mouseLocation) != true
           else { return }
           self.dismissIfDocked()
         }
@@ -243,7 +350,12 @@ final class RecorderPanelController: NSObject, NSWindowDelegate {
   private func dragChanged() {
     guard mode != .hidden, let screen = panel.screen ?? NSScreen.main else { return }
     let mouse = NSEvent.mouseLocation
-    if dragStart == nil { dragStart = (mouse, panel.frame.origin) }
+    if dragStart == nil {
+      dragStart = (mouse, panel.frame.origin)
+      // Once moved, the recorder's home is its menu bar item.
+      customAnchor = nil
+      customAnchorKey = nil
+    }
     guard let start = dragStart else { return }
     pickUp()
     var origin = CGPoint(
@@ -381,6 +493,55 @@ final class RecorderPanelVisibility {
 final class RecorderPanelDragRelay {
   var changed: () -> Void = {}
   var ended: () -> Void = {}
+}
+
+/// The menu bar title while recording: a red dot and the elapsed time.
+enum RecorderStatusTitle {
+  static func recording(time: String) -> NSAttributedString {
+    let size = NSFont.menuBarFont(ofSize: 0).pointSize
+    let title = NSMutableAttributedString(
+      string: "\u{25CF} ",
+      attributes: [.foregroundColor: NSColor.systemRed, .font: NSFont.systemFont(ofSize: size - 3)])
+    title.append(
+      NSAttributedString(
+        string: time,
+        attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: size, weight: .regular)]))
+    return title
+  }
+}
+
+private final class MenuAction: NSObject {
+  let run: () -> Void
+  init(_ run: @escaping () -> Void) { self.run = run }
+  @objc func runAction() { run() }
+}
+
+extension NSMenu {
+  fileprivate func addAction(_ title: String, enabled: Bool = true, run: @escaping () -> Void) {
+    let action = MenuAction(run)
+    let item = addItem(withTitle: title, action: #selector(MenuAction.runAction), keyEquivalent: "")
+    item.target = action
+    item.representedObject = action
+    item.isEnabled = enabled
+  }
+}
+
+/// Opens the menu bar recorder from a view, below the given screen rect, or
+/// below its menu bar item when there is none.
+struct OpenRecorderAction: Sendable {
+  var open: @MainActor @Sendable (CGRect?) -> Void = { _ in }
+  @MainActor func callAsFunction(below key: CGRect? = nil) { open(key) }
+}
+
+private struct OpenRecorderKey: EnvironmentKey {
+  static let defaultValue = OpenRecorderAction()
+}
+
+extension EnvironmentValues {
+  var openRecorder: OpenRecorderAction {
+    get { self[OpenRecorderKey.self] }
+    set { self[OpenRecorderKey.self] = newValue }
+  }
 }
 
 struct RecorderPanelContent: View {
