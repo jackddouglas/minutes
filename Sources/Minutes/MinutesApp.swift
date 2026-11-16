@@ -13,6 +13,8 @@ struct MinutesApp: App {
   @ViewState private var model = AppModel()
   @ViewState private var preferences = AppPreferences()
   @Environment(\.scenePhase) private var scenePhase
+  private let usesRecorderPanel = UserDefaults.standard.bool(
+    forKey: RecorderPanelController.defaultsKey)
 
   var body: some Scene {
     Window("Minutes", id: "main") {
@@ -60,7 +62,7 @@ struct MinutesApp: App {
         .background(WindowDockPresence())
     }.windowResizability(.contentSize)
 
-    MenuBarExtra {
+    MenuBarExtra(isInserted: .constant(!usesRecorderPanel)) {
       MinutesMenu(model: model, preferences: preferences)
     } label: {
       Label(
@@ -74,9 +76,19 @@ struct MinutesApp: App {
       openWindow(id: "main")
       NSApp.activate(ignoringOtherApps: true)
     }
+    if usesRecorderPanel && delegate.recorderPanel == nil {
+      delegate.recorderPanel = RecorderPanelController(model: model) {
+        openWindow(id: "main")
+        NSApp.activate(ignoringOtherApps: true)
+      }
+    }
     model.calendarMonitor.onOpen = { meeting in
-      openWindow(id: "main")
       model.prepareRecording(for: meeting)
+      if let panel = delegate.recorderPanel {
+        panel.showDocked()
+        return
+      }
+      openWindow(id: "main")
       NSApp.activate(ignoringOtherApps: true)
     }
     model.calendarMonitor.startMonitoring()
@@ -155,6 +167,7 @@ private struct MinutesMenu: View {
 final class AppDelegate: NSObject, NSApplicationDelegate {
   var isWorking: () -> Bool = { false }
   var showMainWindow: () -> Void = {}
+  var recorderPanel: RecorderPanelController?
   private var playbackMonitor: Any?
   private var togglePlayback: (() -> Bool)?
 
