@@ -32,7 +32,22 @@ struct RecordingView<SystemSource: View, Accessory: View>: View {
     self.accessory = accessory()
   }
 
+  @Environment(\.recorderFitsContent) private var fitsContent
+
   var body: some View {
+    if fitsContent {
+      // A floating panel sizes itself to the object and its shadow margin.
+      VStack(spacing: 18) {
+        instrument(compact: false, condensed: false).frame(width: 440)
+        accessory
+      }
+      .padding(RecorderPanelPlacement.shadowInset)
+    } else {
+      fillingBody
+    }
+  }
+
+  private var fillingBody: some View {
     GeometryReader { geometry in
       let condensed = geometry.size.height < 500
       let compact = geometry.size.width < 440 || condensed
@@ -152,6 +167,18 @@ extension RecordingView where SystemSource == EmptyView, Accessory == EmptyView 
     self.init(
       levels: levels, startedAt: startedAt, canOperate: canOperate, onTransport: onTransport,
       systemSource: { EmptyView() })
+  }
+}
+
+private struct RecorderFitsContentKey: EnvironmentKey {
+  static let defaultValue = false
+}
+
+extension EnvironmentValues {
+  /// Lay the recorder out at its own size instead of filling its container.
+  var recorderFitsContent: Bool {
+    get { self[RecorderFitsContentKey.self] }
+    set { self[RecorderFitsContentKey.self] = newValue }
   }
 }
 
