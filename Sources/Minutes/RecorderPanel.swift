@@ -449,6 +449,7 @@ final class RecorderDropTarget {
 
   func show(frame: CGRect, active: Bool, below panel: NSWindow) {
     state.isActive = active
+    state.cornerRadius = RecorderSettings.shared.layout == .compact ? 16 : 20
     if window.frame != frame { window.setFrame(frame, display: true) }
     if !window.isVisible { window.order(.below, relativeTo: panel.windowNumber) }
   }
@@ -459,13 +460,14 @@ final class RecorderDropTarget {
 @MainActor @Observable
 final class RecorderDropTargetState {
   var isActive = false
+  var cornerRadius: CGFloat = 20
 }
 
 private struct RecorderDropTargetView: View {
   let state: RecorderDropTargetState
 
   var body: some View {
-    let shape = RoundedRectangle(cornerRadius: 20)
+    let shape = RoundedRectangle(cornerRadius: state.cornerRadius)
     ZStack {
       shape.fill(Color.white.opacity(state.isActive ? 0.18 : 0))
       // A dark rule under the light one keeps the outline visible on any wallpaper.
@@ -595,6 +597,7 @@ struct RecorderPanelContent: View {
         }
       }
       .environment(\.recorderFitsContent, true)
+      .environment(\.recorderCompact, RecorderSettings.shared.layout == .compact)
       .modifier(Unfold(isPresented: visibility.isPresented, anchor: visibility.unfoldAnchor))
       .scaleEffect(visibility.isLifted ? RecorderPanelController.liftScale : 1)
       .rotationEffect(.degrees(visibility.tilt), anchor: .top)

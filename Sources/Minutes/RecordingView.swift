@@ -41,8 +41,12 @@ struct RecordingView<SystemSource: View, Accessory: View>: View {
     return copy
   }
 
+  @Environment(\.recorderCompact) private var compactLayout
+
   var body: some View {
-    if fitsContent {
+    if fitsContent && compactLayout {
+      compactBar.padding(RecorderPanelPlacement.shadowInset)
+    } else if fitsContent {
       // A floating panel sizes itself to the object and its shadow margin.
       VStack(spacing: 18) {
         instrument(compact: false, condensed: false).frame(width: 440)
@@ -176,6 +180,74 @@ struct RecordingView<SystemSource: View, Accessory: View>: View {
     .shadow(color: .black.opacity(0.12), radius: 12, y: 5)
   }
 
+  /// The compact layout: meters, timer and key in one narrow bar.
+  private var compactBar: some View {
+    let now = Date.now
+    return HStack(spacing: 8) {
+      MicrophoneGrille().frame(width: 20, height: 34).accessibilityHidden(true)
+      VUDial(amount: levels.microphone.amount(at: now), compact: true)
+        .frame(width: 68, height: 40)
+        .accessibilityElement().accessibilityLabel("Microphone level")
+      VUDial(amount: levels.system.amount(at: now), compact: true)
+        .frame(width: 68, height: 40)
+        .accessibilityElement().accessibilityLabel("System audio level")
+      HStack(spacing: 6) {
+        Circle().fill(RecorderFinish.orange.opacity(isRecording ? 1 : 0.22))
+          .frame(width: 6, height: 6)
+          .accessibilityHidden(true)
+        Group {
+          if let working = faceplate.working {
+            Text(working.duration)
+              .accessibilityLabel("\(working.label.capitalized), \(working.duration) recorded")
+          } else {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+              Text(
+                MarkdownExporter.timestamp(
+                  isRecording ? context.date.timeIntervalSince(startedAt ?? context.date) : 0))
+            }
+            .opacity(isRecording ? 1 : 0.35)
+            .accessibilityLabel("Recording duration")
+          }
+        }
+        .font(.system(size: 22, weight: .light, design: .monospaced))
+        .tracking(-1)
+        .lineLimit(1)
+      }
+      .frame(maxWidth: .infinity)
+      Button(action: onTransport) {
+        TransportKey(compact: true, recording: isRecording).contentShape(Circle())
+      }
+      .buttonStyle(TransportButtonStyle(compact: true, recording: isRecording))
+      .disabled(!canOperate)
+      .keyboardShortcut(isRecording ? nil : .defaultAction)
+      .accessibilityLabel(isRecording ? "Stop & Transcribe" : "Start Recording")
+    }
+    .padding(.leading, 14).padding(.trailing, 10).padding(.vertical, 8)
+    .frame(width: 360)
+    .foregroundStyle(.primary)
+    .background {
+      RoundedRectangle(cornerRadius: 16)
+        .fill(
+          LinearGradient(
+            colors: colorScheme == .dark
+              ? [
+                Color(red: 0.24, green: 0.25, blue: 0.24),
+                Color(red: 0.15, green: 0.16, blue: 0.15),
+              ]
+              : [RecorderFinish.ivory, RecorderFinish.lowerIvory],
+            startPoint: .topLeading, endPoint: .bottomTrailing)
+        )
+        .overlay {
+          RoundedRectangle(cornerRadius: 16)
+            .strokeBorder(.white.opacity(colorScheme == .dark ? 0.12 : 0.5), lineWidth: 0.5)
+        }
+    }
+    .overlay {
+      RoundedRectangle(cornerRadius: 16).strokeBorder(.primary.opacity(0.08), lineWidth: 0.5)
+    }
+    .shadow(color: .black.opacity(0.12), radius: 12, y: 5)
+  }
+
   private var separator: some View {
     Divider().padding(.horizontal, 24)
   }
@@ -192,11 +264,21 @@ extension RecordingView where SystemSource == EmptyView, Accessory == EmptyView 
   }
 }
 
+private struct RecorderCompactKey: EnvironmentKey {
+  static let defaultValue = false
+}
+
 private struct RecorderFitsContentKey: EnvironmentKey {
   static let defaultValue = false
 }
 
 extension EnvironmentValues {
+  /// In a floating panel, use the compact bar instead of the full recorder.
+  var recorderCompact: Bool {
+    get { self[RecorderCompactKey.self] }
+    set { self[RecorderCompactKey.self] = newValue }
+  }
+
   /// Lay the recorder out at its own size instead of filling its container.
   var recorderFitsContent: Bool {
     get { self[RecorderFitsContentKey.self] }
@@ -329,6 +411,8 @@ private struct VUDial: View {
   var body: some View {
     GeometryReader { geometry in
       let size = geometry.size
+      // A dial in the compact bar is too small for lettering: ticks only.
+      let lettered = size.width >= 90
       let pivot = CGPoint(x: size.width / 2, y: size.height * 0.89)
       let radius = min((size.width / 2 - 11) / 0.82 - 9, size.height * 0.66)
       ZStack {
@@ -357,7 +441,7 @@ private struct VUDial: View {
               path,
               with: .color(tick >= 27 ? RecorderFinish.orange : RecorderFinish.ink.opacity(0.85)),
               lineWidth: tick.isMultiple(of: 5) ? 1 : 0.6)
-            if tick.isMultiple(of: compact ? 10 : 5) {
+            if lettered && tick.isMultiple(of: compact ? 10 : 5) {
               context.draw(
                 Text("\(-60 + tick * 2)").font(.system(size: compact ? 6 : 7, weight: .medium))
                   .foregroundColor(RecorderFinish.ink), at: point(fraction, radius + 9))
@@ -369,13 +453,15 @@ private struct VUDial: View {
             if step == 90 { redZone.move(to: position) } else { redZone.addLine(to: position) }
           }
           context.stroke(redZone, with: .color(RecorderFinish.orange), lineWidth: 1.5)
-          context.draw(
-            Text("LEVEL").font(.system(size: compact ? 6 : 7, weight: .medium)).tracking(1)
-              .foregroundColor(RecorderFinish.secondaryInk),
-            at: CGPoint(x: pivot.x, y: pivot.y - radius * 0.28))
-          context.draw(
-            Text("dBFS").font(.system(size: 5.5)).foregroundColor(RecorderFinish.secondaryInk),
-            at: CGPoint(x: size.width - 20, y: size.height - 12))
+          if lettered {
+            context.draw(
+              Text("LEVEL").font(.system(size: compact ? 6 : 7, weight: .medium)).tracking(1)
+                .foregroundColor(RecorderFinish.secondaryInk),
+              at: CGPoint(x: pivot.x, y: pivot.y - radius * 0.28))
+            context.draw(
+              Text("dBFS").font(.system(size: 5.5)).foregroundColor(RecorderFinish.secondaryInk),
+              at: CGPoint(x: size.width - 20, y: size.height - 12))
+          }
         }
         Rectangle().fill(RecorderFinish.ink)
           .frame(width: 1, height: radius + 2)
