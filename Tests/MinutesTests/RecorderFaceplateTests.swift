@@ -68,6 +68,22 @@ private func tape(
   #expect(tape(prepared: prepared, next: later)?.title == "Debrief")
 }
 
+@Test func clickingTheBandFillsInOrClearsTheRecording() {
+  let later = meeting("First Standup", in: 3600)
+  // Any upcoming meeting can be chosen, even before Join is offered.
+  let offered = tape(next: later)
+  #expect(offered?.isPrepared == false)
+  #expect(offered?.selectAction == .prepare(later))
+  let chosen = tape(prepared: later, next: later)
+  #expect(chosen?.isPrepared == true)
+  #expect(chosen?.selectAction == .unprepare)
+  // Recordings and past meetings are not choosable.
+  #expect(tape(recording: true)?.selectAction == nil)
+  #expect(tape(latest: Meeting(title: "Retro"))?.selectAction == nil)
+  // Join and Open are the only labelled keys.
+  #expect(RecorderTape(tag: "", title: "", action: .prepare(later)).actionTitle == nil)
+}
+
 @Test func tapeShowsTimesOnTheHourAndOnOtherDays() {
   let hour = Calendar.current.dateInterval(of: .hour, for: now)!.start.addingTimeInterval(3600)
   let onTheHour = tape(next: meeting("Debrief", in: hour.timeIntervalSince(now)))

@@ -84,9 +84,6 @@ struct RecordingView<SystemSource: View, Accessory: View>: View {
             .frame(width: 7, height: 7)
             .accessibilityLabel("Recording in progress")
             .accessibilityHidden(!isRecording)
-          if let openLibrary = faceplate.openLibrary {
-            RecorderLibraryKey(open: openLibrary).padding(.leading, -10)
-          }
         }
         .padding(.horizontal, 28).padding(.top, 24)
       }
@@ -123,6 +120,11 @@ struct RecordingView<SystemSource: View, Accessory: View>: View {
               .tracking(-1.5)
               .accessibilityLabel("\(working.label.capitalized), \(working.duration) recorded")
           } else {
+            if let prepared = faceplate.preparedTitle, !isRecording {
+              Text(prepared).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+                .lineLimit(1).truncationMode(.tail)
+                .accessibilityLabel("Next recording, \(prepared)")
+            }
             TimelineView(.periodic(from: .now, by: 1)) { context in
               Text(
                 MarkdownExporter.timestamp(
@@ -154,8 +156,9 @@ struct RecordingView<SystemSource: View, Accessory: View>: View {
         }
       }
       .padding(condensed ? 16 : (compact ? 20 : 24))
-      if let tape = faceplate.tape {
-        RecorderTapeView(tape: tape, onAction: faceplate.onTape)
+      if faceplate.tape != nil || faceplate.openLibrary != nil {
+        RecorderTapeView(
+          tape: faceplate.tape, onAction: faceplate.onTape, openLibrary: faceplate.openLibrary)
       }
     }
     .foregroundStyle(.primary)

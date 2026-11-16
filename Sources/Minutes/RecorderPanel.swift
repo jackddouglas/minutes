@@ -626,7 +626,9 @@ struct RecorderPanelContent: View {
         next: model.calendarMonitor.upcoming.first, latest: latest),
       onTape: { action in
         switch action {
-        case .join(let meeting): model.joinAndRecord(meeting)
+        case .prepare(let meeting): model.prepareRecording(for: meeting)
+        case .unprepare: model.clearPreparedRecording()
+        case .join(let meeting): model.joinMeeting(meeting)
         case .open(let id): drag.openMeeting(id)
         }
       },
@@ -635,6 +637,7 @@ struct RecorderPanelContent: View {
           RecorderWorkingLabel.label(for: model.status),
           MarkdownExporter.timestamp(latest?.duration ?? 0)
         ) : nil,
+      preparedTitle: model.isRecording ? nil : model.preparedCalendarMeeting?.title,
       openLibrary: { drag.openLibrary() })
   }
 

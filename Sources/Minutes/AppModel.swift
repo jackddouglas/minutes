@@ -211,24 +211,21 @@ final class AppModel {
       ?? preferredMeetingBrowserBundleID
   }
 
-  /// One press from the recorder: name the recording after the meeting, open
-  /// its call, and start recording once the browser can be captured. A browser
-  /// that was not running needs a moment; without one, nothing starts.
-  func joinAndRecord(_ meeting: CalendarMeeting) {
+  /// Fills in the recording from the meeting and opens its call. Starting to
+  /// record stays with the user.
+  func joinMeeting(_ meeting: CalendarMeeting) {
     guard !isBusy, !isRecording else { return }
-    prepareRecording(for: meeting)
+    if preparedCalendarMeeting?.id != meeting.id { prepareRecording(for: meeting) }
     joinPreparedMeeting()
-    Task {
-      for _ in 0..<20 {
-        guard !isRecording, !isBusy, preparedCalendarMeeting?.id == meeting.id else { return }
-        refreshSources()
-        if canStart, applications.first(where: { $0.processID == sourceID })?.kind == .browser {
-          start()
-          return
-        }
-        try? await Task.sleep(for: .milliseconds(500))
-      }
-    }
+  }
+
+  /// Undoes `prepareRecording(for:)` without touching the library selection.
+  func clearPreparedRecording() {
+    guard !isBusy, !isRecording, preparedCalendarMeeting != nil else { return }
+    preparedCalendarMeeting = nil
+    title = ""
+    recordingSystemSpeakers = 0
+    refreshSources()
   }
 
   func joinPreparedMeeting() {
@@ -488,7 +485,8 @@ final class AppModel {
   /// Calendar reminders lead to the ordinary recorder, named after the event.
   func prepareRecording(for meeting: CalendarMeeting) {
     guard !isBusy && !isRecording else { return }
-    newMeeting()
+    // The recorder lives apart from the library: leave its selection alone.
+    explicitSourceBundleID = nil
     title = meeting.title
     recordingSystemSpeakers = meeting.acceptedOtherParticipantCount
     preparedCalendarMeeting = meeting
