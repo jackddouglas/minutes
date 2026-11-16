@@ -84,6 +84,9 @@ struct RecordingView<SystemSource: View, Accessory: View>: View {
             .frame(width: 7, height: 7)
             .accessibilityLabel("Recording in progress")
             .accessibilityHidden(!isRecording)
+          if let openLibrary = faceplate.openLibrary {
+            RecorderLibraryKey(open: openLibrary).padding(.leading, -10)
+          }
         }
         .padding(.horizontal, 28).padding(.top, 24)
       }

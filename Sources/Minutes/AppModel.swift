@@ -211,6 +211,26 @@ final class AppModel {
       ?? preferredMeetingBrowserBundleID
   }
 
+  /// One press from the recorder: name the recording after the meeting, open
+  /// its call, and start recording once the browser can be captured. A browser
+  /// that was not running needs a moment; without one, nothing starts.
+  func joinAndRecord(_ meeting: CalendarMeeting) {
+    guard !isBusy, !isRecording else { return }
+    prepareRecording(for: meeting)
+    joinPreparedMeeting()
+    Task {
+      for _ in 0..<20 {
+        guard !isRecording, !isBusy, preparedCalendarMeeting?.id == meeting.id else { return }
+        refreshSources()
+        if canStart, applications.first(where: { $0.processID == sourceID })?.kind == .browser {
+          start()
+          return
+        }
+        try? await Task.sleep(for: .milliseconds(500))
+      }
+    }
+  }
+
   func joinPreparedMeeting() {
     guard let meeting = preparedCalendarMeeting else { return }
     if let bundleID = meetingBrowserBundleID,
