@@ -121,3 +121,12 @@ private func tape(
   #expect(MeetingLength.text(7200) == "2 h")
   #expect(MeetingLength.text(.nan) == "Under 1 min")
 }
+
+@Test func startingClockReadsZeroNotThePreviousMeetingsLength() {
+  #expect(
+    RecorderWorkingLabel.clock(for: "Starting audio capture…", latestDuration: 816) == "00:00")
+  #expect(
+    RecorderWorkingLabel.clock(for: "Loading transcription model…", latestDuration: 816) == "00:00")
+  #expect(
+    RecorderWorkingLabel.clock(for: "Transcribing the meeting…", latestDuration: 816) == "13:36")
+}

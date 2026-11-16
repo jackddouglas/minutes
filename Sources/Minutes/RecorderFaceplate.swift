@@ -116,6 +116,12 @@ enum RecorderWorkingLabel {
   static func label(for status: String) -> String {
     status.hasPrefix("Starting") || status.hasPrefix("Loading") ? "STARTING" : "TRANSCRIBING"
   }
+
+  /// While a recording starts, the clock still reads zero: the latest meeting
+  /// is the previous one. Only a recording being processed shows its length.
+  static func clock(for status: String, latestDuration: Double) -> String {
+    MarkdownExporter.timestamp(label(for: status) == "STARTING" ? 0 : latestDuration)
+  }
 }
 
 // MARK: Views

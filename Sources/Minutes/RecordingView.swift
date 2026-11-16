@@ -118,6 +118,7 @@ struct RecordingView<SystemSource: View, Accessory: View>: View {
             Text(working.duration)
               .font(.system(size: compact ? 27 : 34, weight: .light, design: .monospaced))
               .tracking(-1.5)
+              .opacity(working.label == "STARTING" ? 0.35 : 1)
               .accessibilityLabel("\(working.label.capitalized), \(working.duration) recorded")
           } else {
             // The clock sits centred beside the key; a chosen meeting's title
