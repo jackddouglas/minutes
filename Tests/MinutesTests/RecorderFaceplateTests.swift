@@ -30,7 +30,8 @@ private func tape(
   let next = meeting("First Standup", in: 3600)
   let shown = tape(recording: true, next: next)
   #expect(shown?.tag == "REC")
-  #expect(shown?.text == "WATER COOLER TIME")
+  #expect(shown?.title == "Water Cooler Time")
+  #expect(shown?.detail == nil)
   #expect(shown?.isLive == true)
   #expect(shown?.action == nil)
 }
@@ -40,23 +41,30 @@ private func tape(
   latest.duration = 3966
   let shown = tape(busy: true, next: meeting("First Standup", in: 3600), latest: latest)
   #expect(shown?.tag == "LAST")
-  #expect(shown?.text == "WATER COOLER TIME · 1:06:06")
+  #expect(shown?.title == "Water Cooler Time")
+  #expect(shown?.detail == "1:06:06")
   #expect(shown?.action == .open(latest.id))
+  #expect(shown?.actionTitle == "Open")
 }
 
 @Test func tapeOffersToArmTheNextMeetingThenToJoinIt() {
   let next = meeting("First Standup", in: 3600)
   let offered = tape(next: next)
   #expect(offered?.tag == "NEXT")
+  #expect(offered?.title == "First Standup")
   #expect(offered?.action == .arm(next))
-  #expect(offered?.text.hasPrefix("FIRST STANDUP · ") == true)
-  #expect(offered?.text.contains(" · MON ") == false)
+  #expect(offered?.actionTitle == "Arm")
+  // Today: the time alone, with two-digit minutes on the hour too.
+  let hour = Calendar.current.dateInterval(of: .hour, for: now)!.start.addingTimeInterval(3600)
+  let onTheHour = tape(next: meeting("Debrief", in: hour.timeIntervalSince(now)))
+  #expect(onTheHour?.detail?.wholeMatch(of: /\d{2}:00/) != nil)
+  #expect(offered?.detail?.wholeMatch(of: /\d{2}:\d{2}/) != nil)
+  let later = tape(next: meeting("Sprint Planning", in: 3 * 86_400))
+  #expect(later?.detail?.split(separator: " ").count == 2)
   let armed = tape(prepared: next, next: next)
   #expect(armed?.tag == "ARMED")
   #expect(armed?.action == .join)
-  // A meeting on another day names its weekday.
-  let later = tape(next: meeting("Sprint Planning", in: 3 * 86_400))
-  #expect(later?.text.split(separator: "·").last?.trimmingCharacters(in: .whitespaces).count == 9)
+  #expect(armed?.actionTitle == "Join")
 }
 
 @Test func tapeFallsBackToTheLatestRecordingOrNothing() {
@@ -65,12 +73,8 @@ private func tape(
   #expect(tape() == nil)
 }
 
-@Test func speakersCounterStepsBetweenAutomaticAndTwenty() {
-  #expect(RecorderSpeakers.step(0, by: -1) == 0)
-  #expect(RecorderSpeakers.step(0, by: 1) == 1)
-  #expect(RecorderSpeakers.step(1, by: -1) == 0)
-  #expect(RecorderSpeakers.step(20, by: 1) == 20)
-  #expect(RecorderSpeakers.label(0) == "AUTO")
+@Test func speakersMenuNamesAutomaticAndCounts() {
+  #expect(RecorderSpeakers.label(0) == "Auto")
   #expect(RecorderSpeakers.label(4) == "4")
 }
 

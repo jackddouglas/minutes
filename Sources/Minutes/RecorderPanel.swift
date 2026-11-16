@@ -87,23 +87,14 @@ final class RecorderPanelController: NSObject, NSWindowDelegate {
     apply(.docked)
   }
 
-  /// Opens the recorder centred on the screen with the pointer, or puts it
-  /// away when it is open.
-  func toggleCentred() {
+  /// The global shortcut opens the recorder from its menu bar item, as a
+  /// click on the item does, or puts it away when it is open.
+  func toggleFromShortcut() {
     if mode != .hidden {
       apply(.hidden)
-      return
+    } else {
+      showDocked()
     }
-    let mouse = NSEvent.mouseLocation
-    let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
-    guard let visibleFrame = screen?.visibleFrame else { return }
-    customAnchor = { size in
-      let recorderHeight = size.height - 2 * RecorderPanelPlacement.shadowInset
-      let top = visibleFrame.midY + recorderHeight / 2 + RecorderPanelPlacement.gap
-      return (CGRect(x: visibleFrame.midX, y: top, width: 0, height: 0), visibleFrame)
-    }
-    customAnchorKey = nil
-    apply(.docked)
   }
 
   // MARK: Status item

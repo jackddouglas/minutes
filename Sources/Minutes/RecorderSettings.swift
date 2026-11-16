@@ -155,7 +155,7 @@ struct RecorderSettingsView: View {
         Text("Keyboard")
       } footer: {
         Text(
-          "The shortcut opens the recorder in the middle of the screen from any app. Drag the recorder off the menu bar to keep it on screen; drag it back to the menu bar to put it away again."
+          "The shortcut opens the recorder from the menu bar in any app. Drag the recorder off the menu bar to keep it on screen; drag it back to the menu bar to put it away again."
         )
         .font(.caption).foregroundStyle(.secondary)
       }

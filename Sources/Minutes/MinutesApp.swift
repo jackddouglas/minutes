@@ -91,7 +91,7 @@ struct MinutesApp: App {
       try? await Task.sleep(for: .seconds(1))
       delegate.recorderPanel?.introduceIfNeeded()
     }
-    GlobalHotKey.shared.action = { delegate.recorderPanel?.toggleCentred() }
+    GlobalHotKey.shared.action = { delegate.recorderPanel?.toggleFromShortcut() }
     RecorderSettings.shared.onShortcutChange = { GlobalHotKey.shared.register($0) }
     GlobalHotKey.shared.register(RecorderSettings.shared.shortcut)
     model.calendarMonitor.startMonitoring()

@@ -96,7 +96,10 @@ struct RecordingView<SystemSource: View, Accessory: View>: View {
           Text("System default")
         }
         RecordingMeter(
-          title: "System Audio", level: levels.system, isRecording: isRecording, compact: compact
+          title: "System Audio", level: levels.system, isRecording: isRecording, compact: compact,
+          trailing: faceplate.speakers.map { count in
+            AnyView(RecorderSpeakersMenu(count: count, isEnabled: faceplate.speakersEnabled))
+          }
         ) {
           systemSource
         }
@@ -132,9 +135,6 @@ struct RecordingView<SystemSource: View, Accessory: View>: View {
           }
         }
         Spacer(minLength: 0)
-        if let speakers = faceplate.speakers {
-          RecorderSpeakersCounter(count: speakers, isEnabled: faceplate.speakersEnabled)
-        }
         VStack(spacing: 10) {
           Button(action: onTransport) {
             TransportKey(compact: compact, recording: isRecording)
@@ -153,7 +153,6 @@ struct RecordingView<SystemSource: View, Accessory: View>: View {
       .padding(condensed ? 16 : (compact ? 20 : 24))
       if let tape = faceplate.tape {
         RecorderTapeView(tape: tape, onAction: faceplate.onTape)
-          .padding(.horizontal, 18).padding(.bottom, 18).padding(.top, -6)
       }
     }
     .foregroundStyle(.primary)
@@ -301,6 +300,8 @@ private struct RecordingMeter<Source: View>: View {
   let isRecording: Bool
   let compact: Bool
   var preview: Binding<Bool>? = nil
+  /// A control at the right of the header, across from the title.
+  var trailing: AnyView? = nil
   @ViewBuilder let source: Source
   private static var statusDot: CGFloat { 4 }
   private static var statusGap: CGFloat { 4 }
@@ -323,6 +324,10 @@ private struct RecordingMeter<Source: View>: View {
             preview.wrappedValue
               ? "Stop previewing the microphone level"
               : "Preview the microphone level before recording")
+        }
+        if let trailing {
+          Spacer(minLength: 0)
+          trailing
         }
       }
       VUDial(amount: level.amount(at: now), compact: compact)
