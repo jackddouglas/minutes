@@ -325,6 +325,9 @@ final class AppModel {
         let tracks = try await capture.stop()
         playRecordingSound(.stop)
         try await process(updated, tracks: tracks)
+        if let ready = meetings.first(where: { $0.id == updated.id }) {
+          calendarMonitor.notifyTranscriptReady(ready)
+        }
       } catch {
         self.error = error.localizedDescription
         status = "Recording retained. Retry transcription from the library."

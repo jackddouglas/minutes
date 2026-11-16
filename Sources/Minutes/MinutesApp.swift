@@ -78,9 +78,18 @@ struct MinutesApp: App {
         NSApp.activate(ignoringOtherApps: true)
       }
     }
+    model.calendarMonitor.onOpenMeeting = { id in
+      model.selection = id
+      openWindow(id: "main")
+      NSApp.activate(ignoringOtherApps: true)
+    }
     model.calendarMonitor.onOpen = { meeting in
       model.prepareRecording(for: meeting)
       delegate.recorderPanel?.showDocked()
+    }
+    Task { @MainActor in
+      try? await Task.sleep(for: .seconds(1))
+      delegate.recorderPanel?.introduceIfNeeded()
     }
     GlobalHotKey.shared.action = { delegate.recorderPanel?.toggleCentred() }
     RecorderSettings.shared.onShortcutChange = { GlobalHotKey.shared.register($0) }

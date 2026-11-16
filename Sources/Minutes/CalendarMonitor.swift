@@ -22,6 +22,8 @@ final class CalendarMonitor: NSObject, UNUserNotificationCenterDelegate {
   private(set) var upcoming: [CalendarMeeting] = []
   var invitations: [CalendarMeeting] = []
   var onOpen: ((CalendarMeeting) -> Void)?
+  /// Opens a recorded meeting from its transcript-ready notification.
+  var onOpenMeeting: ((UUID) -> Void)?
   private let store = EKEventStore()
   private let preferences: UserDefaults
   private var task: Task<Void, Never>?
@@ -60,8 +62,10 @@ final class CalendarMonitor: NSObject, UNUserNotificationCenterDelegate {
       }
       let review = UNNotificationAction(
         identifier: "review", title: "Review Recording…", options: .foreground)
+      let open = UNNotificationAction(identifier: "open", title: "Open", options: .foreground)
       center.setNotificationCategories([
-        UNNotificationCategory(identifier: "meeting", actions: [review], intentIdentifiers: [])
+        UNNotificationCategory(identifier: "meeting", actions: [review], intentIdentifiers: []),
+        UNNotificationCategory(identifier: "transcript", actions: [open], intentIdentifiers: []),
       ])
     }
     guard task == nil else { return }
@@ -214,17 +218,71 @@ final class CalendarMonitor: NSObject, UNUserNotificationCenterDelegate {
     }
   }
 
+  /// Tells the user a recording has been transcribed; Open shows it.
+  func notifyTranscriptReady(_ meeting: Meeting) {
+    guard let center else { return }
+    let notice = TranscriptReadyNotice(meeting: meeting)
+    Task {
+      if await center.notificationSettings().authorizationStatus == .notDetermined {
+        _ = try? await center.requestAuthorization(options: [.alert, .sound])
+      }
+      let content = UNMutableNotificationContent()
+      content.title = notice.title
+      content.body = notice.body
+      content.categoryIdentifier = "transcript"
+      content.userInfo = [transcriptMeetingIDKey: meeting.id.uuidString]
+      try? await center.add(
+        UNNotificationRequest(
+          identifier: "transcript-\(meeting.id.uuidString)", content: content, trigger: nil))
+    }
+  }
+
+  /// Minutes is often the active app while it works; show its notices anyway.
+  nonisolated func userNotificationCenter(
+    _ center: UNUserNotificationCenter, willPresent notification: UNNotification
+  ) async -> UNNotificationPresentationOptions {
+    [.banner, .list, .sound]
+  }
+
   nonisolated func userNotificationCenter(
     _ center: UNUserNotificationCenter,
     didReceive response: UNNotificationResponse
   ) async {
     let id = response.notification.request.identifier
+    let meetingID =
+      (response.notification.request.content.userInfo[transcriptMeetingIDKey]
+      as? String).flatMap(UUID.init(uuidString:))
     await MainActor.run {
+      if let meetingID {
+        self.onOpenMeeting?(meetingID)
+        return
+      }
       self.refresh()
       if let meeting = self.upcoming.first(where: { $0.id == id && $0.isDue(at: Date()) }) {
         NSApp.activate(ignoringOtherApps: true)
         self.onOpen?(meeting)
       }
     }
+  }
+}
+
+private let transcriptMeetingIDKey = "minutesMeetingID"
+
+/// The text of the notification sent when a recording has been transcribed.
+struct TranscriptReadyNotice: Equatable {
+  let title: String
+  let body: String
+
+  init(meeting: Meeting) {
+    let name = meeting.title.trimmingCharacters(in: .whitespacesAndNewlines)
+    title = "\(name.isEmpty ? Meeting.untitled : name) is ready"
+    let speakers = Set(meeting.utterances.map(\.speaker)).count
+    let voices =
+      switch speakers {
+      case 0: "No speech"
+      case 1: "1 speaker"
+      default: "\(speakers) speakers"
+      }
+    body = "\(MarkdownExporter.timestamp(meeting.duration)) · \(voices)"
   }
 }

@@ -24,6 +24,7 @@ final class RecorderPanelController: NSObject, NSWindowDelegate {
   private var movingProgrammatically = false
   private var monitors: [Any] = []
   private var clock: Timer?
+  private var introWindow: NSWindow?
   /// Where the recorder hangs when it was not opened from its menu bar item:
   /// below the window's record key, or centred on screen. Cleared when the
   /// recorder is put away or dragged, so the menu bar item is home again.
@@ -257,6 +258,11 @@ final class RecorderPanelController: NSObject, NSWindowDelegate {
 
   private func anchor(for size: CGSize) -> (anchor: CGRect, visibleFrame: CGRect)? {
     if let customAnchor { return customAnchor(size) }
+    return itemAnchor()
+  }
+
+  /// The menu bar item, or the top centre of its screen when the item is hidden.
+  private func itemAnchor() -> (anchor: CGRect, visibleFrame: CGRect)? {
     guard let itemWindow = statusItem.button?.window,
       let screen = itemWindow.screen ?? NSScreen.main
     else { return nil }
@@ -264,6 +270,58 @@ final class RecorderPanelController: NSObject, NSWindowDelegate {
       for: itemWindow.frame, screens: NSScreen.screens.map(\.frame),
       fallback: screen.visibleFrame)
     return (anchor, screen.visibleFrame)
+  }
+
+  // MARK: First launch
+
+  /// Shows the first-launch introduction once: the recorder floats from the
+  /// middle of the screen into its menu bar item, then a tip names the shortcut.
+  func introduceIfNeeded(defaults: UserDefaults = .standard) {
+    let key = "recorderIntroduced"
+    guard !defaults.bool(forKey: key), introWindow == nil, let (item, visibleFrame) = itemAnchor()
+    else { return }
+    defaults.set(true, forKey: key)
+    let point = CGPoint(x: item.midX, y: max(item.midY, visibleFrame.maxY))
+    guard
+      let screen = NSScreen.screens.first(where: { $0.frame.insetBy(dx: 0, dy: -1).contains(point) }
+      )
+        ?? NSScreen.main
+    else { return }
+    let frame = screen.frame
+    let window = NSPanel(
+      contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
+      defer: false)
+    window.isOpaque = false
+    window.backgroundColor = .clear
+    window.hasShadow = false
+    window.ignoresMouseEvents = true
+    window.level = .statusBar
+    window.isReleasedWhenClosed = false
+    window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+    window.contentView = NSHostingView(
+      rootView: RecorderIntroView(
+        model: model,
+        itemPoint: CGPoint(x: point.x - frame.minX, y: frame.maxY - point.y),
+        tipTop: frame.maxY - visibleFrame.maxY + 8,
+        shortcut: RecorderSettings.shared.shortcut?.displayString,
+        onArrive: { [weak self] in self?.pulseItem() },
+        onFinish: { [weak self] in
+          self?.introWindow?.orderOut(nil)
+          self?.introWindow = nil
+        }))
+    window.setFrame(frame, display: true)
+    window.orderFrontRegardless()
+    introWindow = window
+  }
+
+  /// Lights the menu bar item briefly, as the recorder arrives in it.
+  private func pulseItem() {
+    statusItem.button?.highlight(true)
+    Task { @MainActor [weak self] in
+      try? await Task.sleep(for: .milliseconds(700))
+      guard let self else { return }
+      self.statusItem.button?.highlight(self.mode == .docked)
+    }
   }
 
   private func dockedFrame(size: CGSize) -> CGRect? {
