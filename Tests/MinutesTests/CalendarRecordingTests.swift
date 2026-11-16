@@ -28,7 +28,8 @@ import Testing
 
   model.prepareRecording(for: event)
 
-  #expect(model.selection == nil)
+  // The library keeps what it shows; only the recorder is filled in.
+  #expect(model.selection == previous.id)
   #expect(model.title == "Design Review")
   #expect(model.recordingSystemSpeakers == acceptedCount)
   #expect(model.preparedCalendarMeeting == event)
@@ -142,4 +143,30 @@ import Testing
       (.unknown, .person, false),
       (.delegated, .person, false),
     ]) == 2)
+}
+
+@Test @MainActor func clearingAPreparedRecordingLeavesTheLibraryAlone() throws {
+  let suite = "MinutesTests.\(UUID().uuidString)"
+  let preferences = try #require(UserDefaults(suiteName: suite))
+  let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+  defer {
+    preferences.removePersistentDomain(forName: suite)
+    try? FileManager.default.removeItem(at: directory)
+  }
+  let model = AppModel(supportDirectory: directory, preferences: preferences)
+  let previous = Meeting(title: "Earlier")
+  model.meetings = [previous]
+  model.selection = previous.id
+  let event = CalendarMeeting(
+    eventID: "debrief", title: "Debrief", start: .now, end: .now.addingTimeInterval(1800),
+    url: try #require(URL(string: "https://meet.google.com/abc-defg-hij")),
+    acceptedOtherParticipantCount: 3)
+
+  model.prepareRecording(for: event)
+  model.clearPreparedRecording()
+
+  #expect(model.preparedCalendarMeeting == nil)
+  #expect(model.title.isEmpty)
+  #expect(model.recordingSystemSpeakers == 0)
+  #expect(model.selection == previous.id)
 }
