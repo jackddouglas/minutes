@@ -61,10 +61,7 @@ struct MinutesApp: App {
   }
 
   private var openRecorder: OpenRecorderAction {
-    OpenRecorderAction { [delegate] key in
-      guard let panel = delegate.recorderPanel else { return }
-      if let key { panel.toggle(below: key) } else { panel.showDocked() }
-    }
+    OpenRecorderAction { [delegate] in delegate.recorderPanel?.showDocked() }
   }
 
   private func configureBackgroundServices() {

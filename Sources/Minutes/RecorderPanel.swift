@@ -25,11 +25,6 @@ final class RecorderPanelController: NSObject, NSWindowDelegate {
   private var monitors: [Any] = []
   private var clock: Timer?
   private var introWindow: NSWindow?
-  /// Where the recorder hangs when it was not opened from its menu bar item:
-  /// below the window's record key, or centred on screen. Cleared when the
-  /// recorder is put away or dragged, so the menu bar item is home again.
-  private var customAnchor: ((CGSize) -> (anchor: CGRect, visibleFrame: CGRect))?
-  private var customAnchorKey: CGRect?
 
   init(model: AppModel, openMainWindow: @escaping () -> Void) {
     self.model = model
@@ -70,27 +65,7 @@ final class RecorderPanelController: NSObject, NSWindowDelegate {
   }
 
   /// Opens the recorder below the menu bar item, for example for a calendar event.
-  func showDocked() {
-    customAnchor = nil
-    customAnchorKey = nil
-    apply(.docked)
-  }
-
-  /// Opens or closes the recorder below a key in a window, such as the
-  /// library's record key. `key` is in screen coordinates.
-  func toggle(below key: CGRect) {
-    if mode != .hidden, customAnchorKey == key {
-      apply(.hidden)
-      return
-    }
-    let screen =
-      NSScreen.screens.first { $0.frame.contains(CGPoint(x: key.midX, y: key.midY)) }
-      ?? NSScreen.main
-    let visibleFrame = screen?.visibleFrame ?? key
-    customAnchor = { _ in (key, visibleFrame) }
-    customAnchorKey = key
-    apply(.docked)
-  }
+  func showDocked() { apply(.docked) }
 
   /// The global shortcut opens the recorder from its menu bar item, as a
   /// click on the item does, or puts it away when it is open.
@@ -194,10 +169,6 @@ final class RecorderPanelController: NSObject, NSWindowDelegate {
   private func apply(_ next: RecorderPanelMode) {
     let previous = mode
     mode = next
-    if next == .hidden {
-      customAnchor = nil
-      customAnchorKey = nil
-    }
     statusItem.button?.highlight(next == .docked)
     switch next {
     case .hidden where previous != .hidden:
@@ -253,8 +224,7 @@ final class RecorderPanelController: NSObject, NSWindowDelegate {
   }
 
   private func anchor(for size: CGSize) -> (anchor: CGRect, visibleFrame: CGRect)? {
-    if let customAnchor { return customAnchor(size) }
-    return itemAnchor()
+    itemAnchor()
   }
 
   /// The menu bar item, or the top centre of its screen when the item is hidden.
@@ -384,10 +354,8 @@ final class RecorderPanelController: NSObject, NSWindowDelegate {
       matching: mask,
       handler: { [weak self] event in
         MainActor.assumeIsolated {
-          // The key that opened the recorder closes it itself.
           guard let self, event.window !== self.panel,
-            event.window !== self.statusItem.button?.window,
-            self.customAnchorKey?.contains(NSEvent.mouseLocation) != true
+            event.window !== self.statusItem.button?.window
           else { return }
           self.dismissIfDocked()
         }
@@ -412,9 +380,6 @@ final class RecorderPanelController: NSObject, NSWindowDelegate {
     let mouse = NSEvent.mouseLocation
     if dragStart == nil {
       dragStart = (mouse, panel.frame.origin)
-      // Once moved, the recorder's home is its menu bar item.
-      customAnchor = nil
-      customAnchorKey = nil
     }
     guard let start = dragStart else { return }
     pickUp()
@@ -590,11 +555,10 @@ extension NSMenu {
   }
 }
 
-/// Opens the menu bar recorder from a view, below the given screen rect, or
-/// below its menu bar item when there is none.
+/// Opens the menu bar recorder from a view.
 struct OpenRecorderAction: Sendable {
-  var open: @MainActor @Sendable (CGRect?) -> Void = { _ in }
-  @MainActor func callAsFunction(below key: CGRect? = nil) { open(key) }
+  var open: @MainActor @Sendable () -> Void = {}
+  @MainActor func callAsFunction() { open() }
 }
 
 private struct OpenRecorderKey: EnvironmentKey {

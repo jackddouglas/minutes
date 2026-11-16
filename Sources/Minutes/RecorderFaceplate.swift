@@ -13,6 +13,8 @@ struct RecorderFaceplate {
   var working: (label: String, duration: String)?
   /// The name the next recording will take, from a chosen calendar meeting.
   var preparedTitle: String?
+  /// Keep the line above the clock free for a chosen meeting's title.
+  var reservesPreparedTitle: Bool { preparedTitle != nil || tape?.meeting != nil }
   var openLibrary: (() -> Void)?
 }
 
@@ -204,6 +206,7 @@ struct RecorderTapeView: View {
     }
     .padding(.leading, 16).padding(.trailing, 12)
     .frame(height: 44)
+    .animation(.easeOut(duration: 0.2), value: tape?.isPrepared)
     .background {
       // A shade darker than the face, lit along its upper edge.
       UnevenRoundedRectangle(bottomLeadingRadius: 20, bottomTrailingRadius: 20)
@@ -236,6 +239,11 @@ struct RecorderTapeView: View {
           .foregroundStyle(.secondary)
           .fixedSize()
       }
+      if tape.isPrepared {
+        Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold))
+          .foregroundStyle(.secondary)
+          .transition(.opacity.combined(with: .scale(scale: 0.6)))
+      }
       Spacer(minLength: 4)
     }
     if let select = tape.selectAction {
@@ -244,7 +252,7 @@ struct RecorderTapeView: View {
       } label: {
         content
       }
-      .buttonStyle(BandKeyStyle(selected: tape.isPrepared, fill: true))
+      .buttonStyle(BandKeyStyle(fill: true))
       .help(
         tape.isPrepared
           ? "Clear the recording’s name and speakers"
@@ -295,5 +303,34 @@ private struct BandKeyStyle: ButtonStyle {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
     }
+  }
+}
+
+/// The chosen meeting's title, set above the recorder's clock as the name of
+/// the next recording. It rises into place; pointing at it offers to clear it.
+struct RecorderPreparedTitle: View {
+  let title: String
+  var clear: () -> Void
+  @ViewState private var hovering = false
+
+  var body: some View {
+    HStack(spacing: 5) {
+      Text(title)
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(.secondary)
+        .lineLimit(1).truncationMode(.tail)
+      Button(action: clear) {
+        Image(systemName: "xmark.circle.fill").font(.system(size: 11))
+          .foregroundStyle(.tertiary)
+      }
+      .buttonStyle(.plain)
+      .opacity(hovering ? 1 : 0)
+      .help("Clear the recording’s name and speakers")
+      .accessibilityLabel("Clear \(title)")
+    }
+    .contentShape(Rectangle())
+    .onHover { hovering = $0 }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Next recording, \(title)")
   }
 }
