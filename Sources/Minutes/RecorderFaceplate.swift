@@ -13,8 +13,6 @@ struct RecorderFaceplate {
   var working: (label: String, duration: String)?
   /// The name the next recording will take, from a chosen calendar meeting.
   var preparedTitle: String?
-  /// Keep the line above the clock free for a chosen meeting's title.
-  var reservesPreparedTitle: Bool { preparedTitle != nil || tape?.meeting != nil }
   var openLibrary: (() -> Void)?
 }
 
@@ -239,11 +237,6 @@ struct RecorderTapeView: View {
           .foregroundStyle(.secondary)
           .fixedSize()
       }
-      if tape.isPrepared {
-        Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold))
-          .foregroundStyle(.secondary)
-          .transition(.opacity.combined(with: .scale(scale: 0.6)))
-      }
       Spacer(minLength: 4)
     }
     if let select = tape.selectAction {
@@ -252,7 +245,7 @@ struct RecorderTapeView: View {
       } label: {
         content
       }
-      .buttonStyle(BandKeyStyle(fill: true))
+      .buttonStyle(BandKeyStyle(selected: tape.isPrepared, fill: true))
       .help(
         tape.isPrepared
           ? "Clear the recording’s name and speakers"
