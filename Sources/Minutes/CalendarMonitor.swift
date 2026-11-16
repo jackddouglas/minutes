@@ -283,6 +283,6 @@ struct TranscriptReadyNotice: Equatable {
       case 1: "1 speaker"
       default: "\(speakers) speakers"
       }
-    body = "\(MarkdownExporter.timestamp(meeting.duration)) · \(voices)"
+    body = "\(MeetingLength.text(meeting.duration)) · \(voices)"
   }
 }
