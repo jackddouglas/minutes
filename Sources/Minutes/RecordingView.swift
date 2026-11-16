@@ -120,20 +120,14 @@ struct RecordingView<SystemSource: View, Accessory: View>: View {
               .tracking(-1.5)
               .accessibilityLabel("\(working.label.capitalized), \(working.duration) recorded")
           } else {
-            if faceplate.reservesPreparedTitle && !isRecording {
-              // Reserved, so choosing a meeting never moves the clock.
-              ZStack(alignment: .leading) {
-                if let prepared = faceplate.preparedTitle {
-                  RecorderPreparedTitle(title: prepared) { faceplate.onTape(.unprepare) }
-                    .transition(
-                      .asymmetric(
-                        insertion: .opacity.combined(with: .offset(y: 10)),
-                        removal: .opacity.combined(with: .offset(y: 6))))
-                }
-              }
-              .frame(height: 16, alignment: .leading)
-              .animation(
-                .spring(response: 0.38, dampingFraction: 0.86), value: faceplate.preparedTitle)
+            // The clock sits centred beside the key; a chosen meeting's title
+            // rises in above it and the clock slides down to make room.
+            if let prepared = faceplate.preparedTitle, !isRecording {
+              RecorderPreparedTitle(title: prepared) { faceplate.onTape(.unprepare) }
+                .transition(
+                  .asymmetric(
+                    insertion: .opacity.combined(with: .offset(y: 10)),
+                    removal: .opacity.combined(with: .offset(y: 6))))
             }
             TimelineView(.periodic(from: .now, by: 1)) { context in
               Text(
@@ -149,6 +143,7 @@ struct RecordingView<SystemSource: View, Accessory: View>: View {
             .accessibilityHidden(!isRecording)
           }
         }
+        .animation(.spring(response: 0.38, dampingFraction: 0.86), value: faceplate.preparedTitle)
         Spacer(minLength: 0)
         VStack(spacing: 10) {
           Button(action: onTransport) {
