@@ -16,26 +16,25 @@ enum RecorderPanelMode: Equatable {
   /// Escape and clicks elsewhere dismiss only a docked recorder.
   func dismissed() -> Self { self == .docked ? .hidden : self }
 
+  /// Dropping the recorder near the menu bar, or on its home outline, docks
+  /// it; anywhere else it stays where it was put. A docked recorder stays open
+  /// until dismissed.
   func dragEnded(at frame: CGRect, docked: CGRect, visibleFrame: CGRect) -> Self {
-    switch self {
-    case .hidden: .hidden
-    case .docked:
-      RecorderPanelPlacement.isDetached(frame, from: docked) ? .detached : .docked
-    case .detached:
-      // Dropping on the menu bar, or on the home outline below the item, docks
-      // it there. It stays open until dismissed like any docked recorder.
+    guard self != .hidden else { return .hidden }
+    let snaps =
       RecorderPanelPlacement.reachesMenuBar(frame, visibleFrame: visibleFrame)
-        || !RecorderPanelPlacement.isDetached(frame, from: docked) ? .docked : .detached
-    }
+      || !RecorderPanelPlacement.isDetached(frame, from: docked)
+    return snaps ? .docked : .detached
   }
 }
 
 enum RecorderPanelPlacement {
-  /// Transparent margin around the recorder that leaves room for its shadow.
-  static let shadowInset: CGFloat = 32
+  /// Transparent margin around the recorder that leaves room for its shadow,
+  /// including the deeper shadow of a lifted, tilted recorder while dragged.
+  static let shadowInset: CGFloat = 64
   static let gap: CGFloat = 6
   static let detachDistance: CGFloat = 48
-  static let menuBarBand: CGFloat = 24
+  static let menuBarBand: CGFloat = 100
 
   /// The panel frame that hangs the recorder below its menu bar item and keeps
   /// the recorder itself on screen.
@@ -61,10 +60,8 @@ enum RecorderPanelPlacement {
     hypot(frame.midX - docked.midX, frame.maxY - docked.maxY) > detachDistance
   }
 
-  /// Whether the recorder has been dragged up to the menu bar. macOS stops a
-  /// dragged window at the menu bar, so measure the panel's own top edge: the
-  /// recorder itself always stays a shadow margin lower.
+  /// Whether the recorder's top edge is within the snap band below the menu bar.
   static func reachesMenuBar(_ frame: CGRect, visibleFrame: CGRect) -> Bool {
-    frame.maxY >= visibleFrame.maxY - menuBarBand
+    frame.maxY - shadowInset >= visibleFrame.maxY - menuBarBand
   }
 }

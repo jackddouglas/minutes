@@ -8,6 +8,7 @@ import SwiftUI
 @MainActor
 final class RecorderPanelController: NSObject, NSWindowDelegate {
   static let defaultsKey = "recorderPanel"
+  static let liftScale: CGFloat = 1.02
   private static let log = Logger(subsystem: "app.minutes.meetings", category: "RecorderPanel")
 
   private let model: AppModel
@@ -18,14 +19,16 @@ final class RecorderPanelController: NSObject, NSWindowDelegate {
   private let hosting: NSHostingView<RecorderPanelContent>
   private let dropTarget = RecorderDropTarget()
   private(set) var mode = RecorderPanelMode.hidden
-  private var dragCheck: Task<Void, Never>?
+  private let dragRelay = RecorderPanelDragRelay()
+  private var dragStart: (mouse: CGPoint, origin: CGPoint)?
   private var movingProgrammatically = false
   private var monitors: [Any] = []
 
   init(model: AppModel, openMainWindow: @escaping () -> Void) {
     self.model = model
     self.openMainWindow = openMainWindow
-    hosting = NSHostingView(rootView: RecorderPanelContent(model: model, visibility: visibility))
+    hosting = NSHostingView(
+      rootView: RecorderPanelContent(model: model, visibility: visibility, drag: dragRelay))
     panel = RecorderPanel(
       contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
       defer: true)
@@ -34,6 +37,8 @@ final class RecorderPanelController: NSObject, NSWindowDelegate {
     panel.contentView = hosting
     panel.delegate = self
     panel.onCancel = { [weak self] in self?.apply(self?.mode.dismissed() ?? .hidden) }
+    dragRelay.changed = { [weak self] in self?.dragChanged() }
+    dragRelay.ended = { [weak self] in self?.dragFinished() }
 
     if let button = statusItem.button {
       button.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Minutes")
@@ -95,7 +100,7 @@ final class RecorderPanelController: NSObject, NSWindowDelegate {
     statusItem.button?.highlight(next == .docked)
     switch next {
     case .hidden where previous != .hidden:
-      hide(returningHome: previous == .detached)
+      hide()
     case .docked:
       show(fromHidden: previous == .hidden)
     case .detached, .hidden:
@@ -106,32 +111,48 @@ final class RecorderPanelController: NSObject, NSWindowDelegate {
   private func show(fromHidden: Bool) {
     if !model.isRecording { model.refreshSources() }
     visibility.isVisible = true
+    if fromHidden { visibility.isPresented = false }
     hosting.layoutSubtreeIfNeeded()
-    let size = hosting.fittingSize
-    guard let target = dockedFrame(size: size) else { return }
-    if fromHidden {
-      setFrame(target.offsetBy(dx: 0, dy: 8), animated: false)
-      panel.alphaValue = 0
-      panel.makeKeyAndOrderFront(nil)
+    guard let target = dockedFrame(size: hosting.fittingSize) else { return }
+    guard fromHidden else {
+      // A dropped or recalled recorder glides into its home.
+      animate { self.panel.animator().setFrame(target, display: true) }
+      panel.makeKey()
+      return
     }
-    animate {
-      self.panel.animator().setFrame(target, display: true)
-      self.panel.animator().alphaValue = 1
+    // The window appears in place; the recorder inside unfolds from its item.
+    visibility.unfoldAnchor = unfoldAnchor(in: target)
+    setFrame(target, animated: false)
+    panel.alphaValue = 1
+    panel.makeKeyAndOrderFront(nil)
+    Task { @MainActor in
+      withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
+        self.visibility.isPresented = true
+      }
     }
-    panel.makeKey()
   }
 
-  /// A recorder dropped on the menu bar slides home before it disappears.
-  private func hide(returningHome: Bool) {
-    let home = returningHome ? dockedFrame(size: panel.frame.size) : nil
-    animate {
-      if let home { self.panel.animator().setFrame(home, display: true) }
-      self.panel.animator().alphaValue = 0
-    } completion: {
-      guard self.mode == .hidden else { return }
+  private func hide() {
+    withAnimation(.easeIn(duration: 0.12)) { visibility.isPresented = false }
+    Task { @MainActor [weak self] in
+      try? await Task.sleep(for: .milliseconds(150))
+      guard let self, self.mode == .hidden else { return }
       self.panel.orderOut(nil)
       self.visibility.isVisible = false
     }
+  }
+
+  /// The point on the recorder's top edge below the menu bar item, in the
+  /// panel's content, which includes the shadow margin.
+  private func unfoldAnchor(in frame: CGRect) -> UnitPoint {
+    let anchor = statusItem.button?.window.map { item in
+      RecorderPanelPlacement.anchor(
+        for: item.frame, screens: NSScreen.screens.map(\.frame),
+        fallback: (item.screen ?? NSScreen.main)?.visibleFrame ?? frame)
+    }
+    let x = ((anchor?.midX ?? frame.midX) - frame.minX) / max(frame.width, 1)
+    return UnitPoint(
+      x: min(max(x, 0), 1), y: RecorderPanelPlacement.shadowInset / max(frame.height, 1))
   }
 
   private func dockedFrame(size: CGSize) -> CGRect? {
@@ -216,18 +237,35 @@ final class RecorderPanelController: NSObject, NSWindowDelegate {
 
   // MARK: Dragging
 
-  func windowDidMove(_ notification: Notification) {
-    guard !movingProgrammatically, mode != .hidden else { return }
-    showDropTarget()
+  /// The app moves the panel itself: a window-server drag would stop the
+  /// panel's top edge at the menu bar, keeping the recorder a shadow margin
+  /// below it. Here the recorder itself stops at the menu bar.
+  private func dragChanged() {
+    guard mode != .hidden, let screen = panel.screen ?? NSScreen.main else { return }
+    let mouse = NSEvent.mouseLocation
+    if dragStart == nil { dragStart = (mouse, panel.frame.origin) }
+    guard let start = dragStart else { return }
     pickUp()
-    dragCheck?.cancel()
-    dragCheck = Task { [weak self] in
-      // The window server moves the panel; wait for the mouse to come up.
-      while NSEvent.pressedMouseButtons & 1 != 0 {
-        do { try await Task.sleep(for: .milliseconds(60)) } catch { return }
-      }
-      self?.dragEnded()
-    }
+    var origin = CGPoint(
+      x: start.origin.x + mouse.x - start.mouse.x, y: start.origin.y + mouse.y - start.mouse.y)
+    // Stop when the recorder's highest corner meets the bottom of the menu bar.
+    // The lift scales it about its centre; the tilt turns it about the middle
+    // of its top edge.
+    let inset = RecorderPanelPlacement.shadowInset
+    let objectHeight = panel.frame.height - 2 * inset
+    let lift = visibility.isLifted ? objectHeight * (Self.liftScale - 1) / 2 : 0
+    let halfWidth = (panel.frame.width / 2 - inset) * (visibility.isLifted ? Self.liftScale : 1)
+    let corner = halfWidth * sin(abs(visibility.tilt) * .pi / 180)
+    let highest = screen.visibleFrame.maxY + inset - lift - corner - panel.frame.height
+    origin.y = min(origin.y, highest)
+    setFrame(CGRect(origin: origin, size: panel.frame.size), animated: false)
+    showDropTarget()
+  }
+
+  private func dragFinished() {
+    guard dragStart != nil else { return }
+    dragStart = nil
+    dragEnded()
   }
 
   /// At the start of a drag the recorder lifts and settles at a small random
@@ -246,7 +284,7 @@ final class RecorderPanelController: NSObject, NSWindowDelegate {
       let screen = panel.screen ?? NSScreen.main
     else { return }
     let next = mode.dragEnded(at: panel.frame, docked: docked, visibleFrame: screen.visibleFrame)
-    let goesHome = next != .detached
+    let goesHome = next == .docked
     dropTarget.show(
       frame: docked.insetBy(
         dx: RecorderPanelPlacement.shadowInset, dy: RecorderPanelPlacement.shadowInset),
@@ -331,12 +369,24 @@ final class RecorderPanelVisibility {
   var isVisible = false
   /// While dragged, the recorder lifts and holds a small tilt from its top edge.
   var isLifted = false
+  /// Opening unfolds the recorder from the point below its menu bar item.
+  var isPresented = false
+  var unfoldAnchor = UnitPoint.top
   var tilt: Double = 0
+}
+
+/// Forwards the recorder's drag gesture to the controller, which positions the
+/// panel from the pointer's screen location.
+@MainActor
+final class RecorderPanelDragRelay {
+  var changed: () -> Void = {}
+  var ended: () -> Void = {}
 }
 
 struct RecorderPanelContent: View {
   let model: AppModel
   let visibility: RecorderPanelVisibility
+  let drag: RecorderPanelDragRelay
 
   var body: some View {
     if visibility.isVisible {
@@ -352,13 +402,36 @@ struct RecorderPanelContent: View {
         }
       }
       .environment(\.recorderFitsContent, true)
-      .scaleEffect(visibility.isLifted ? 1.02 : 1)
-      .shadow(color: .black.opacity(visibility.isLifted ? 0.18 : 0), radius: 18, y: 12)
+      .modifier(Unfold(isPresented: visibility.isPresented, anchor: visibility.unfoldAnchor))
+      .scaleEffect(visibility.isLifted ? RecorderPanelController.liftScale : 1)
       .rotationEffect(.degrees(visibility.tilt), anchor: .top)
+      // After the rotation, so the lifted shadow falls straight down from the
+      // tilted shape: a wide, soft ambient layer and a close contact layer.
+      .shadow(color: .black.opacity(visibility.isLifted ? 0.14 : 0), radius: 22, y: 16)
+      .shadow(color: .black.opacity(visibility.isLifted ? 0.08 : 0), radius: 4, y: 3)
       .animation(.spring(response: 0.3, dampingFraction: 0.8), value: visibility.tilt)
       .animation(.easeOut(duration: 0.15), value: visibility.isLifted)
-      .gesture(WindowDragGesture())
+      .gesture(
+        DragGesture(minimumDistance: 3, coordinateSpace: .global)
+          .onChanged { _ in drag.changed() }
+          .onEnded { _ in drag.ended() })
     }
+  }
+}
+
+/// Opening grows the recorder out of the point below its menu bar item;
+/// Reduce Motion keeps only the fade.
+private struct Unfold: ViewModifier {
+  let isPresented: Bool
+  let anchor: UnitPoint
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  func body(content: Content) -> some View {
+    let moves = !isPresented && !reduceMotion
+    content
+      .scaleEffect(moves ? 0.9 : 1, anchor: anchor)
+      .offset(y: moves ? -8 : 0)
+      .opacity(isPresented ? 1 : 0)
   }
 }
 
@@ -374,7 +447,7 @@ final class RecorderPanel: NSPanel {
     backgroundColor = .clear
     hasShadow = false
     level = .floating
-    isMovableByWindowBackground = true
+    isMovableByWindowBackground = false
     hidesOnDeactivate = false
     becomesKeyOnlyIfNeeded = false
     isReleasedWhenClosed = false
@@ -383,6 +456,12 @@ final class RecorderPanel: NSPanel {
   }
 
   override var canBecomeKey: Bool { true }
+
+  // The transparent shadow margin may overlap the menu bar; AppKit would
+  // otherwise push the panel down and the recorder would miss its outline.
+  override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+    frameRect
+  }
 
   override func cancelOperation(_ sender: Any?) { onCancel() }
 }
