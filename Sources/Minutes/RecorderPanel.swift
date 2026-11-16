@@ -45,6 +45,12 @@ final class RecorderPanelController: NSObject, NSWindowDelegate {
     panel.onCancel = { [weak self] in self?.apply(self?.mode.dismissed() ?? .hidden) }
     dragRelay.changed = { [weak self] in self?.dragChanged() }
     dragRelay.ended = { [weak self] in self?.dragFinished() }
+    dragRelay.openMeeting = { [weak self] id in
+      guard let self else { return }
+      self.model.selection = id
+      self.apply(self.mode.dismissed())
+      self.openMainWindow()
+    }
 
     if let button = statusItem.button {
       button.imagePosition = .imageLeading
@@ -493,6 +499,7 @@ final class RecorderPanelVisibility {
 final class RecorderPanelDragRelay {
   var changed: () -> Void = {}
   var ended: () -> Void = {}
+  var openMeeting: (Meeting.ID) -> Void = { _ in }
 }
 
 /// The menu bar title while recording: a red dot and the elapsed time.
@@ -545,17 +552,42 @@ extension EnvironmentValues {
 }
 
 struct RecorderPanelContent: View {
-  let model: AppModel
+  @Bindable var model: AppModel
   let visibility: RecorderPanelVisibility
   let drag: RecorderPanelDragRelay
+
+  private var faceplate: RecorderFaceplate {
+    let recording = model.recordingMeetingID.flatMap { id in model.meetings.first { $0.id == id } }
+    let latest = model.meetings.first
+    return RecorderFaceplate(
+      speakers: $model.recordingSystemSpeakers,
+      speakersEnabled: !model.isRecording && !model.isBusy,
+      tape: RecorderTape.content(
+        isRecording: model.isRecording, isBusy: model.isBusy,
+        recordingTitle: recording?.title ?? Meeting.untitled,
+        prepared: model.preparedCalendarMeeting,
+        next: model.calendarMonitor.upcoming.first, latest: latest),
+      onTape: { action in
+        switch action {
+        case .arm(let meeting): model.prepareRecording(for: meeting)
+        case .join: model.joinPreparedMeeting()
+        case .open(let id): drag.openMeeting(id)
+        }
+      },
+      working: model.isBusy && !model.isRecording
+        ? (
+          RecorderWorkingLabel.label(for: model.status),
+          MarkdownExporter.timestamp(latest?.duration ?? 0)
+        ) : nil)
+  }
 
   var body: some View {
     if visibility.isVisible {
       Group {
         if model.isRecording {
-          LiveRecordingView(model: model)
+          LiveRecordingView(model: model, faceplate: faceplate)
         } else {
-          ReadyRecorderView(model: model) {
+          ReadyRecorderView(model: model, faceplate: faceplate) {
             AudioSourceMenu(model: model).disabled(model.isBusy)
           } accessory: {
             EmptyView()

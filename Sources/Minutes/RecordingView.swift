@@ -14,6 +14,7 @@ struct RecordingView<SystemSource: View, Accessory: View>: View {
   var microphonePreview: Binding<Bool>?
   let systemSource: SystemSource
   let accessory: Accessory
+  var faceplate = RecorderFaceplate()
 
   init(
     levels: RecordingLevels, isRecording: Bool = true, startedAt: Date? = nil,
@@ -33,6 +34,12 @@ struct RecordingView<SystemSource: View, Accessory: View>: View {
   }
 
   @Environment(\.recorderFitsContent) private var fitsContent
+
+  func faceplate(_ faceplate: RecorderFaceplate) -> Self {
+    var copy = self
+    copy.faceplate = faceplate
+    return copy
+  }
 
   var body: some View {
     if fitsContent {
@@ -97,22 +104,33 @@ struct RecordingView<SystemSource: View, Accessory: View>: View {
       separator
 
       HStack(alignment: .center, spacing: 16) {
-        VStack(alignment: .leading, spacing: 8) {
-          TimelineView(.periodic(from: .now, by: 1)) { context in
-            Text(
-              MarkdownExporter.timestamp(
-                isRecording ? context.date.timeIntervalSince(startedAt ?? context.date) : 0)
-            )
-            .font(.system(size: compact ? 27 : 34, weight: .light, design: .monospaced))
-            .tracking(-1.5)
-            .contentTransition(.identity)
-            .opacity(isRecording ? 1 : 0.35)
+        VStack(alignment: .leading, spacing: 2) {
+          if let working = faceplate.working {
+            Text(working.label).font(.system(size: 9, weight: .semibold)).tracking(1.4)
+              .foregroundStyle(.secondary)
+            Text(working.duration)
+              .font(.system(size: compact ? 27 : 34, weight: .light, design: .monospaced))
+              .tracking(-1.5)
+              .accessibilityLabel("\(working.label.capitalized), \(working.duration) recorded")
+          } else {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+              Text(
+                MarkdownExporter.timestamp(
+                  isRecording ? context.date.timeIntervalSince(startedAt ?? context.date) : 0)
+              )
+              .font(.system(size: compact ? 27 : 34, weight: .light, design: .monospaced))
+              .tracking(-1.5)
+              .contentTransition(.identity)
+              .opacity(isRecording ? 1 : 0.35)
+            }
+            .accessibilityLabel("Recording duration")
+            .accessibilityHidden(!isRecording)
           }
-          .accessibilityLabel("Recording duration")
-          .accessibilityHidden(!isRecording)
-
         }
         Spacer(minLength: 0)
+        if let speakers = faceplate.speakers {
+          RecorderSpeakersCounter(count: speakers, isEnabled: faceplate.speakersEnabled)
+        }
         VStack(spacing: 10) {
           Button(action: onTransport) {
             TransportKey(compact: compact, recording: isRecording)
@@ -129,6 +147,10 @@ struct RecordingView<SystemSource: View, Accessory: View>: View {
         }
       }
       .padding(condensed ? 16 : (compact ? 20 : 24))
+      if let tape = faceplate.tape {
+        RecorderTapeView(tape: tape, onAction: faceplate.onTape)
+          .padding(.horizontal, 18).padding(.bottom, 18).padding(.top, -6)
+      }
     }
     .foregroundStyle(.primary)
     .background {
