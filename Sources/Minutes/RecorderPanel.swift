@@ -46,6 +46,11 @@ final class RecorderPanelController: NSObject, NSWindowDelegate {
     panel.onCancel = { [weak self] in self?.apply(self?.mode.dismissed() ?? .hidden) }
     dragRelay.changed = { [weak self] in self?.dragChanged() }
     dragRelay.ended = { [weak self] in self?.dragFinished() }
+    dragRelay.openLibrary = { [weak self] in
+      guard let self else { return }
+      self.apply(self.mode.dismissed())
+      self.openMainWindow()
+    }
     dragRelay.openMeeting = { [weak self] id in
       guard let self else { return }
       self.model.selection = id
@@ -551,6 +556,7 @@ final class RecorderPanelDragRelay {
   var changed: () -> Void = {}
   var ended: () -> Void = {}
   var openMeeting: (Meeting.ID) -> Void = { _ in }
+  var openLibrary: () -> Void = {}
 }
 
 /// The menu bar title while recording: a red dot and the elapsed time.
@@ -620,8 +626,7 @@ struct RecorderPanelContent: View {
         next: model.calendarMonitor.upcoming.first, latest: latest),
       onTape: { action in
         switch action {
-        case .arm(let meeting): model.prepareRecording(for: meeting)
-        case .join: model.joinPreparedMeeting()
+        case .join(let meeting): model.joinAndRecord(meeting)
         case .open(let id): drag.openMeeting(id)
         }
       },
@@ -629,7 +634,8 @@ struct RecorderPanelContent: View {
         ? (
           RecorderWorkingLabel.label(for: model.status),
           MarkdownExporter.timestamp(latest?.duration ?? 0)
-        ) : nil)
+        ) : nil,
+      openLibrary: { drag.openLibrary() })
   }
 
   var body: some View {
