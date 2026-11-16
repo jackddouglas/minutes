@@ -49,29 +49,29 @@ private let size = CGSize(width: 504, height: 480)
 
 @Test func draggingOffTheMenuBarDetachesAndDroppingBackDocks() {
   let docked = RecorderPanelPlacement.dockedFrame(size: size, below: item, visibleFrame: visible)
+  let inset = RecorderPanelPlacement.shadowInset
+  func drop(_ mode: RecorderPanelMode, recorderTop: CGFloat, x: CGFloat = 300) -> RecorderPanelMode
+  {
+    let frame = CGRect(
+      x: x, y: recorderTop + inset - size.height, width: size.width, height: size.height)
+    return mode.dragEnded(at: frame, docked: docked, visibleFrame: visible)
+  }
+  // A small nudge, or a drop on the home outline, docks either way.
   let nudged = docked.offsetBy(dx: -12, dy: -10)
   #expect(
     RecorderPanelMode.docked.dragEnded(at: nudged, docked: docked, visibleFrame: visible) == .docked
   )
-  let away = docked.offsetBy(dx: -400, dy: -200)
-  #expect(
-    RecorderPanelMode.docked.dragEnded(at: away, docked: docked, visibleFrame: visible) == .detached
-  )
-  #expect(
-    RecorderPanelMode.detached.dragEnded(at: away, docked: docked, visibleFrame: visible)
-      == .detached)
-  // macOS stops a dragged window at the menu bar, so the panel top meets it.
-  // Anywhere along the menu bar counts, not only under the item.
-  let raised = CGRect(
-    x: 300, y: visible.maxY - size.height, width: size.width, height: size.height)
-  #expect(
-    RecorderPanelMode.detached.dragEnded(at: raised, docked: docked, visibleFrame: visible)
-      == .docked)
-  #expect(
-    RecorderPanelMode.detached.dragEnded(
-      at: raised.offsetBy(dx: 0, dy: -60), docked: docked, visibleFrame: visible) == .detached)
-  // Dropping on the home outline below the item also docks it.
   #expect(
     RecorderPanelMode.detached.dragEnded(at: nudged, docked: docked, visibleFrame: visible)
       == .docked)
+  // Pulled well below the menu bar, it stays where it was put.
+  #expect(drop(.docked, recorderTop: visible.maxY - 200) == .detached)
+  #expect(drop(.detached, recorderTop: visible.maxY - 200) == .detached)
+  // Anywhere within the snap band along the menu bar docks it, including up
+  // over the menu bar itself.
+  #expect(drop(.detached, recorderTop: visible.maxY - 90) == .docked)
+  #expect(drop(.detached, recorderTop: visible.maxY + 30) == .docked)
+  #expect(drop(.docked, recorderTop: visible.maxY - 20) == .docked)
+  #expect(drop(.detached, recorderTop: visible.maxY - 110) == .detached)
+  #expect(drop(.hidden, recorderTop: visible.maxY) == .hidden)
 }
