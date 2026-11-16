@@ -208,21 +208,32 @@ struct RecorderTapeView: View {
         .accessibilityLabel("Open library")
       }
     }
-    .padding(.leading, 16).padding(.trailing, 12)
-    .frame(height: 44)
+    .padding(.leading, 4).padding(.trailing, 6)
+    .frame(height: 42)
     .animation(.easeOut(duration: 0.2), value: tape?.isPrepared)
     .background {
-      // A shade darker than the face, lit along its upper edge.
-      UnevenRoundedRectangle(bottomLeadingRadius: 20, bottomTrailingRadius: 20)
-        .fill(.black.opacity(colorScheme == .dark ? 0.14 : 0.035))
-        .overlay(alignment: .top) {
-          VStack(spacing: 0) {
-            Rectangle().fill(.black.opacity(0.08)).frame(height: 0.5)
-            Rectangle().fill(.white.opacity(colorScheme == .dark ? 0.06 : 0.6)).frame(height: 0.5)
-          }
+      // A tray set into the face: darker than it, shaded under its upper
+      // inside edge, and with the face catching light just below it.
+      let dark = colorScheme == .dark
+      let tray = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
+      tray
+        .fill(
+          Color.black.opacity(dark ? 0.2 : 0.06)
+            .shadow(.inner(color: .black.opacity(dark ? 0.5 : 0.2), radius: 2, y: 1.5))
+        )
+        .overlay { tray.strokeBorder(.black.opacity(dark ? 0.3 : 0.14), lineWidth: 0.5) }
+        .background {
+          // Only the sliver below the tray, so it cannot show through the fill.
+          tray.offset(y: 1).subtracting(tray)
+            .fill(.white.opacity(dark ? 0.07 : 0.85))
         }
     }
+    .padding(.horizontal, Self.inset).padding(.bottom, Self.inset)
   }
+
+  /// How far the tray sits in from the face's sides and foot.
+  static let inset: CGFloat = 14
+  static let radius: CGFloat = 12
 
   /// The printed meeting. For a calendar meeting the whole legend is a key
   /// that fills in the next recording, or clears it again.

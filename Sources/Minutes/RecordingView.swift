@@ -58,6 +58,8 @@ struct RecordingView<SystemSource: View, Accessory: View>: View {
     }
   }
 
+  private var hasTape: Bool { faceplate.tape != nil || faceplate.openLibrary != nil }
+
   private var fillingBody: some View {
     GeometryReader { geometry in
       let condensed = geometry.size.height < 500
@@ -161,8 +163,11 @@ struct RecordingView<SystemSource: View, Accessory: View>: View {
               : "Record the selected app and your microphone")
         }
       }
-      .padding(condensed ? 16 : (compact ? 20 : 24))
-      if faceplate.tape != nil || faceplate.openLibrary != nil {
+      .padding(.horizontal, condensed ? 16 : (compact ? 20 : 24))
+      .padding(.top, condensed ? 16 : (compact ? 20 : 24))
+      // The inset tray brings its own margin, so the face gives up a little.
+      .padding(.bottom, (condensed ? 16 : (compact ? 20 : 24)) - (hasTape ? 8 : 0))
+      if hasTape {
         RecorderTapeView(
           tape: faceplate.tape, onAction: faceplate.onTape, openLibrary: faceplate.openLibrary)
       }
