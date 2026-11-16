@@ -33,7 +33,7 @@ struct RecorderTape: Equatable {
 
   var tag: String
   var title: String
-  /// A time or a length, set in the meters' monospaced type.
+  /// A time of day, or a length in hours and minutes.
   var detail: String?
   var isLive = false
   var action: Action?
@@ -66,7 +66,7 @@ struct RecorderTape: Equatable {
     }
     let last = latest.map {
       RecorderTape(
-        tag: "Last", title: $0.title, detail: MarkdownExporter.timestamp($0.duration),
+        tag: "Last", title: $0.title, detail: MeetingLength.text($0.duration),
         action: .open($0.id))
     }
     if isBusy { return last }
@@ -88,6 +88,19 @@ struct RecorderTape: Equatable {
       .dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
     guard !calendar.isDate(meeting.start, inSameDayAs: now) else { return time }
     return "\(meeting.start.formatted(.dateTime.weekday(.abbreviated))) \(time)"
+  }
+}
+
+/// A meeting's length in words, so it cannot read as a time of day:
+/// "Under 1 min", "14 min", "1 h 6 min", "2 h".
+enum MeetingLength {
+  static func text(_ seconds: Double) -> String {
+    let minutes = seconds.isFinite ? Int((max(0, seconds) / 60).rounded()) : 0
+    guard minutes > 0 else { return "Under 1 min" }
+    let hours = minutes / 60
+    let rest = minutes % 60
+    if hours == 0 { return "\(minutes) min" }
+    return rest == 0 ? "\(hours) h" : "\(hours) h \(rest) min"
   }
 }
 
@@ -172,6 +185,10 @@ struct RecorderTapeView: View {
           .help(help(for: action))
         }
       } else {
+        Text("No meetings yet")
+          .font(.system(size: 12))
+          .foregroundStyle(.secondary)
+          .padding(.horizontal, 8)
         Spacer(minLength: 0)
       }
       if let openLibrary {
@@ -215,7 +232,7 @@ struct RecorderTapeView: View {
         .lineLimit(1).truncationMode(.tail)
       if let detail = tape.detail {
         Text(detail)
-          .font(.system(size: 11, design: .monospaced))
+          .font(.system(size: 11)).monospacedDigit()
           .foregroundStyle(.secondary)
           .fixedSize()
       }

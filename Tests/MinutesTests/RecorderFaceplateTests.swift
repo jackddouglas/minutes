@@ -42,7 +42,7 @@ private func tape(
   let shown = tape(busy: true, next: meeting("First Standup", in: 60), latest: latest)
   #expect(shown?.tag == "Last")
   #expect(shown?.title == "Water Cooler Time")
-  #expect(shown?.detail == "1:06:06")
+  #expect(shown?.detail == "1 h 6 min")
   #expect(shown?.action == .open(latest.id))
   #expect(shown?.actionTitle == "Open")
 }
@@ -110,4 +110,14 @@ private func tape(
   #expect(RecorderWorkingLabel.label(for: "Loading transcription model…") == "STARTING")
   #expect(RecorderWorkingLabel.label(for: "Transcribing the meeting…") == "TRANSCRIBING")
   #expect(RecorderWorkingLabel.label(for: "Finishing recording…") == "TRANSCRIBING")
+}
+
+@Test func meetingLengthsReadAsDurationsNotTimesOfDay() {
+  #expect(MeetingLength.text(0) == "Under 1 min")
+  #expect(MeetingLength.text(12) == "Under 1 min")
+  #expect(MeetingLength.text(95) == "2 min")
+  #expect(MeetingLength.text(816) == "14 min")  // 13:36
+  #expect(MeetingLength.text(3966) == "1 h 6 min")  // 1:06:06
+  #expect(MeetingLength.text(7200) == "2 h")
+  #expect(MeetingLength.text(.nan) == "Under 1 min")
 }
