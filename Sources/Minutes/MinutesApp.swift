@@ -82,6 +82,9 @@ struct MinutesApp: App {
       model.prepareRecording(for: meeting)
       delegate.recorderPanel?.showDocked()
     }
+    GlobalHotKey.shared.action = { delegate.recorderPanel?.toggleCentred() }
+    RecorderSettings.shared.onShortcutChange = { GlobalHotKey.shared.register($0) }
+    GlobalHotKey.shared.register(RecorderSettings.shared.shortcut)
     model.calendarMonitor.startMonitoring()
     WindowDockController.shared.refresh()
     delegate.isWorking = { model.isRecording || model.isBusy }

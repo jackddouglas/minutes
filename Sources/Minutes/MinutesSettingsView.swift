@@ -104,6 +104,8 @@ struct MinutesSettingsView: View {
         }.formStyle(.grouped).scrollContentBackground(.hidden).tabItem {
           Label("General", systemImage: "gearshape")
         }
+        RecorderSettingsView()
+          .tabItem { Label("Recorder", systemImage: "record.circle") }
         Form {
           Section {
             TextField("Your Name", text: $model.defaultMicrophoneSpeaker, prompt: Text("You"))
