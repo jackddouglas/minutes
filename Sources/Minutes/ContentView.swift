@@ -255,9 +255,6 @@ struct ContentView: View {
 
   private var meetingDetail: some View {
     VStack(spacing: 0) {
-      if let invitation = model.calendarMonitor.invitations.first {
-        calendarBanner(invitation)
-      }
       if let recordingID = model.recordingMeetingID, model.selection == recordingID {
         RecordingInProgressView(model: model) { openRecorder() }
       } else if let meeting = model.selectedMeeting, meeting.isTranscribed {
@@ -292,6 +289,12 @@ struct ContentView: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background {
       Color(nsColor: .windowBackgroundColor).ignoresSafeArea(.container, edges: .top)
+    }
+    // Pinned under the toolbar; the content below keeps its own layout.
+    .safeAreaInset(edge: .top, spacing: 0) {
+      if let invitation = model.calendarMonitor.invitations.first {
+        calendarBanner(invitation)
+      }
     }
     .safeAreaInset(edge: .bottom, spacing: 0) {
       if let recordingID = model.recordingMeetingID, model.selection != recordingID {

@@ -21,6 +21,14 @@ final class CalendarMonitor: NSObject, UNUserNotificationCenterDelegate {
   private(set) var status = "Connect Calendar to get recording reminders."
   private(set) var upcoming: [CalendarMeeting] = []
   var invitations: [CalendarMeeting] = []
+  /// The calendar meeting being recorded. Its reminder is withdrawn and not posted again.
+  var recordingMeetingID: String? {
+    didSet {
+      guard let id = recordingMeetingID else { return }
+      invitations.removeAll { $0.id == id }
+      center?.removeDeliveredNotifications(withIdentifiers: [id])
+    }
+  }
   var onOpen: ((CalendarMeeting) -> Void)?
   /// Opens a recorded meeting from its transcript-ready notification.
   var onOpenMeeting: ((UUID) -> Void)?
@@ -172,7 +180,7 @@ final class CalendarMonitor: NSObject, UNUserNotificationCenterDelegate {
     invitations.removeAll { !valid.contains($0.id) || $0.end <= now }
     invitations = invitations.compactMap { invitation in upcoming.first { $0.id == invitation.id } }
     var ledger = CalendarReminderLedger(notified: seen)
-    for meeting in ledger.claimDue(upcoming, at: now) {
+    for meeting in ledger.claimDue(upcoming, at: now) where meeting.id != recordingMeetingID {
       invitations.append(meeting)
       let mainWindowVisible = NSApp.windows.contains {
         $0.identifier?.rawValue == "main" && $0.isVisible && !$0.isMiniaturized

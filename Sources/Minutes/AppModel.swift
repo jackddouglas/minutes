@@ -313,7 +313,8 @@ final class AppModel {
         recordingStarted = Date()
         recordingLevels = RecordingLevels()
         isRecording = true
-        recordingSystemSpeakers = 0
+        // The speakers menu keeps showing the chosen count, disabled, until the recording ends.
+        calendarMonitor.recordingMeetingID = preparedCalendarMeeting?.id
         preparedCalendarMeeting = nil
         status = "Recording app audio and your microphone"
       } catch {
@@ -334,6 +335,8 @@ final class AppModel {
         isBusy = false
         activeMeeting = nil
         recordingStarted = nil
+        recordingSystemSpeakers = 0
+        calendarMonitor.recordingMeetingID = nil
       }
       do {
         var updated = meeting
