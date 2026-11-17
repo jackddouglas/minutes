@@ -29,7 +29,7 @@ Published 2026-11-17: https://github.com/jackddouglas/minutes/releases/tag/v0.1.
 | Minutes-0.1.16-macos-arm64.zip | `dbd29062624edd630ab0d5ad3d8dd7fd9e4105f86c75d3c53a37be78dcc0e5a3` |
 | appcast.xml | `9f4924d625dedeab6f0c59e8309c5f70f859e2c166f86e5bc74fd7700b7cf380` |
 
-The speaker count, banner and pill colour were checked by tests and a local
-build, not in the notarized build. A live calendar recording with this build and
+The speaker count and reminder changes were checked by tests only. None of the
+changes was seen on screen. A live calendar recording with this build and
 automatic update installation from 0.1.15 were not exercised. Installed
 /Applications and Nix-managed copies were not replaced.
