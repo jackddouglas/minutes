@@ -9,7 +9,7 @@ struct RecordingIndicator: View {
   var body: some View {
     Button(action: showRecording) {
       HStack(spacing: 10) {
-        Circle().fill(.orange).frame(width: 7, height: 7)
+        Circle().fill(RecorderFinish.orange).frame(width: 7, height: 7)
         Text("Recording").fontWeight(.medium)
         TimelineView(.periodic(from: .now, by: 1)) { context in
           Text(
