@@ -610,11 +610,28 @@ struct RecorderPanelContent: View {
       Group {
         if model.isRecording {
           LiveRecordingView(model: model, faceplate: faceplate)
+            .overlay {
+              if let id = model.meetEndReminderID {
+                VStack(spacing: 4) {
+                  Text("Finished with this meeting?").font(.headline)
+                  HStack {
+                    Button("Keep Recording") { model.respondToMeetEnd(id, action: .keep) }
+                    Button("Stop Recording") { model.respondToMeetEnd(id, action: .stop) }
+                  }
+                }
+                .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+              }
+            }
         } else {
           ReadyRecorderView(model: model, faceplate: faceplate) {
             AudioSourceMenu(model: model).disabled(model.isBusy)
           } accessory: {
             EmptyView()
+          }
+          .contextMenu {
+            if RecorderSettings.shared.layout == .compact && !model.isBusy {
+              AudioSourceChoices(model: model)
+            }
           }
         }
       }

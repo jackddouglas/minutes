@@ -4,6 +4,12 @@ import MinutesCore
 import Observation
 import UserNotifications
 
+enum MeetEndAction: String {
+  case stop = "stopRecording"
+  case keep = "keepRecording"
+  case show
+}
+
 struct MonitoredCalendar: Identifiable {
   let id: String
   let title: String
@@ -32,6 +38,9 @@ final class CalendarMonitor: NSObject, UNUserNotificationCenterDelegate {
   var onOpen: ((CalendarMeeting) -> Void)?
   /// Opens a recorded meeting from its transcript-ready notification.
   var onOpenMeeting: ((UUID) -> Void)?
+  var onMeetEndAction: ((UUID, MeetEndAction) -> Void)?
+  var showMeetEndRecorder: (() -> Void)?
+  private var activeMeetEndNotice: UUID?
   private let store = EKEventStore()
   private let preferences: UserDefaults
   private var task: Task<Void, Never>?
@@ -73,6 +82,11 @@ final class CalendarMonitor: NSObject, UNUserNotificationCenterDelegate {
       let open = UNNotificationAction(identifier: "open", title: "Open", options: .foreground)
       center.setNotificationCategories([
         UNNotificationCategory(identifier: "meeting", actions: [review], intentIdentifiers: []),
+        UNNotificationCategory(
+          identifier: "meetEnd", actions: [
+            UNNotificationAction(identifier: MeetEndAction.stop.rawValue, title: "Stop Recording"),
+            UNNotificationAction(identifier: MeetEndAction.keep.rawValue, title: "Keep Recording"),
+          ], intentIdentifiers: []),
         UNNotificationCategory(identifier: "transcript", actions: [open], intentIdentifiers: []),
       ])
     }
@@ -92,7 +106,7 @@ final class CalendarMonitor: NSObject, UNUserNotificationCenterDelegate {
       preferences.set(false, forKey: "calendarDetectionEnabled")
       upcoming = []
       invitations = []
-      center?.removeAllDeliveredNotifications()
+      center?.removeDeliveredNotifications(withIdentifiers: Array(seen.keys))
       status = "Calendar reminders are off."
       return
     }
@@ -124,7 +138,7 @@ final class CalendarMonitor: NSObject, UNUserNotificationCenterDelegate {
     if selected { selectedCalendarIDs.insert(id) } else { selectedCalendarIDs.remove(id) }
     preferences.set(selectedCalendarIDs.sorted(), forKey: "selectedCalendarIDs")
     if enabled {
-      center?.removeAllDeliveredNotifications()
+      center?.removeDeliveredNotifications(withIdentifiers: Array(seen.keys))
       refresh()
     }
   }
@@ -226,6 +240,45 @@ final class CalendarMonitor: NSObject, UNUserNotificationCenterDelegate {
     }
   }
 
+  func notifyMeetEnd(_ id: UUID) {
+    activeMeetEndNotice = id
+    guard let center else {
+      showMeetEndRecorder?()
+      return
+    }
+    Task {
+      let settings = await center.notificationSettings()
+      guard activeMeetEndNotice == id else { return }
+      do {
+        if settings.authorizationStatus == .notDetermined {
+          guard try await center.requestAuthorization(options: [.alert, .sound]) else {
+            if activeMeetEndNotice == id { showMeetEndRecorder?() }
+            return
+          }
+        } else if settings.alertSetting != .enabled {
+          showMeetEndRecorder?()
+          return
+        }
+        guard activeMeetEndNotice == id else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "Finished with this meeting?"
+        content.body = "Minutes is still recording."
+        content.categoryIdentifier = "meetEnd"
+        try await center.add(UNNotificationRequest(
+          identifier: id.uuidString, content: content, trigger: nil))
+        if activeMeetEndNotice != id { withdrawMeetEnd(id) }
+      } catch {
+        if activeMeetEndNotice == id { showMeetEndRecorder?() }
+      }
+    }
+  }
+
+  func withdrawMeetEnd(_ id: UUID) {
+    if activeMeetEndNotice == id { activeMeetEndNotice = nil }
+    center?.removePendingNotificationRequests(withIdentifiers: [id.uuidString])
+    center?.removeDeliveredNotifications(withIdentifiers: [id.uuidString])
+  }
+
   /// Tells the user a recording has been transcribed; Open shows it.
   func notifyTranscriptReady(_ meeting: Meeting) {
     guard let center else { return }
@@ -257,6 +310,14 @@ final class CalendarMonitor: NSObject, UNUserNotificationCenterDelegate {
     didReceive response: UNNotificationResponse
   ) async {
     let id = response.notification.request.identifier
+    if response.notification.request.content.categoryIdentifier == "meetEnd" {
+      let action = response.actionIdentifier == UNNotificationDefaultActionIdentifier
+        ? MeetEndAction.show : MeetEndAction(rawValue: response.actionIdentifier)
+      if let id = UUID(uuidString: id), let action {
+        await MainActor.run { self.onMeetEndAction?(id, action) }
+      }
+      return
+    }
     let meetingID =
       (response.notification.request.content.userInfo[transcriptMeetingIDKey]
       as? String).flatMap(UUID.init(uuidString:))

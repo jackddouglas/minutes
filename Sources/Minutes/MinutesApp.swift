@@ -75,6 +75,7 @@ struct MinutesApp: App {
         NSApp.activate(ignoringOtherApps: true)
       }
     }
+    model.calendarMonitor.showMeetEndRecorder = { delegate.recorderPanel?.showDocked() }
     model.calendarMonitor.onOpenMeeting = { id in
       model.selection = id
       openWindow(id: "main")

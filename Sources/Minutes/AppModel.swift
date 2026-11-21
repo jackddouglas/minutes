@@ -22,6 +22,9 @@ final class AppModel {
   private(set) var preparedCalendarMeeting: CalendarMeeting?
   var applications: [AudioSource] = []
   var sourceID: Int32 = 0
+  @ObservationIgnored private var meetEndTask: Task<Void, Never>?
+  @ObservationIgnored private var meetEnd = MeetEndDetector()
+  private(set) var meetEndReminderID: UUID?
   private var explicitSourceBundleID: String?
   private let runningAudioSources: () -> [AudioSource]
   private let defaultBrowserBundleID: (URL) -> String?
@@ -136,6 +139,9 @@ final class AppModel {
       meetings = try store.load()
       selection = meetings.first?.id
     } catch { self.error = "Could not read the meeting library: \(error.localizedDescription)" }
+    calendarMonitor.onMeetEndAction = { [weak self] id, action in
+      self?.respondToMeetEnd(id, action: action)
+    }
     capture.onFailure = { [weak self] message in
       guard let self, self.isRecording else { return }
       self.error = "Capture stopped: \(message). The recording will be retained."
@@ -315,6 +321,7 @@ final class AppModel {
         isRecording = true
         // The speakers menu keeps showing the chosen count, disabled, until the recording ends.
         calendarMonitor.recordingMeetingID = preparedCalendarMeeting?.id
+        watchMeetEnd(for: meeting.id)
         preparedCalendarMeeting = nil
         status = "Recording app audio and your microphone"
       } catch {
@@ -324,8 +331,56 @@ final class AppModel {
     }
   }
 
+  private func watchMeetEnd(for id: UUID) {
+    meetEndTask = Task { [weak self] in
+      while !Task.isCancelled {
+        guard let self, self.recordingMeetingID == id else { return }
+        self.sampleMeetEnd()
+        do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
+      }
+    }
+  }
+
+  private func sampleMeetEnd() {
+    meetEnd.observe(capture.callStreams, at: ProcessInfo.processInfo.systemUptime)
+    switch meetEnd.action(
+      automaticallyStop: RecorderSettings.shared.automaticallyStopMeet, displayed: meetEndReminderID)
+    {
+    case .stop: stop()
+    case .withdraw: clearMeetEndNotice()
+    case .show(let id):
+      clearMeetEndNotice()
+      meetEndReminderID = id
+      calendarMonitor.notifyMeetEnd(id)
+    case nil: break
+    }
+  }
+
+  func respondToMeetEnd(_ id: UUID, action: MeetEndAction) {
+    guard isRecording, meetEndReminderID == id else { return }
+    // A notification click can arrive between samples or after a reconnect.
+    sampleMeetEnd()
+    guard meetEndReminderID == id else { return }
+    switch action {
+    case .stop: stop()
+    case .keep:
+      meetEnd.keepRecording()
+      clearMeetEndNotice()
+    case .show: calendarMonitor.showMeetEndRecorder?()
+    }
+  }
+
+  private func clearMeetEndNotice() {
+    if let id = meetEndReminderID { calendarMonitor.withdrawMeetEnd(id) }
+    meetEndReminderID = nil
+  }
+
   func stop() {
     guard isRecording, let meeting = activeMeeting, !isBusy else { return }
+    meetEndTask?.cancel()
+    meetEndTask = nil
+    clearMeetEndNotice()
+    meetEnd = MeetEndDetector()
     isRecording = false
     recordingLevels = RecordingLevels()
     isBusy = true

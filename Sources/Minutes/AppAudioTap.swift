@@ -179,6 +179,16 @@ final class AppAudioTap {
     }
   }
 
+  func callStreams() -> CallStreams? {
+    guard !processIDs.isEmpty else { return nil }
+    let processes = processIDs.map { AudioHardwareProcess(id: $0) }
+    do {
+      return try CallStreams(
+        input: processes.contains { try $0.isRunningInput },
+        output: processes.contains { try $0.isRunningOutput })
+    } catch { return nil }
+  }
+
   private func matchingProcesses() throws -> [AudioObjectID] {
     guard let scope else { return [] }
     var address = property(kAudioHardwarePropertyProcessObjectList)

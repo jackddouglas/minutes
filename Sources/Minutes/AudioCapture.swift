@@ -185,6 +185,8 @@ final class AudioCapture {
   private let queue = DispatchQueue(label: "app.minutes.audio", qos: .userInitiated)
   var onFailure: ((String) -> Void)?
 
+  var callStreams: CallStreams? { appTap?.callStreams() }
+
   func levels() async -> RecordingLevels {
     guard let sink else { return RecordingLevels() }
     return await withCheckedContinuation { continuation in

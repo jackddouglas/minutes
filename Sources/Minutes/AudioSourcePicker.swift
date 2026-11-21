@@ -65,13 +65,7 @@ struct AudioSourceMenu: View {
     Group {
       if let selected = model.applications.first(where: { $0.processID == model.sourceID }) {
         Menu {
-          Picker(
-            "Source", selection: Binding(get: { model.sourceID }, set: { model.selectSource($0) })
-          ) {
-            ForEach(model.applications) { app in
-              Text(app.applicationName).tag(app.processID)
-            }
-          }.pickerStyle(.inline)
+          AudioSourceChoices(model: model)
         } label: {
           // A plain style lets the label inherit the meter caption's type.
           HStack(spacing: 3) {
@@ -87,6 +81,20 @@ struct AudioSourceMenu: View {
       }
     }
     .refreshingAudioSources(model)
+  }
+}
+
+struct AudioSourceChoices: View {
+  @Bindable var model: AppModel
+
+  var body: some View {
+    Picker(
+      "Source", selection: Binding(get: { model.sourceID }, set: { model.selectSource($0) })
+    ) {
+      ForEach(model.applications) { app in
+        Text(app.applicationName).tag(app.processID)
+      }
+    }.pickerStyle(.inline)
   }
 }
 

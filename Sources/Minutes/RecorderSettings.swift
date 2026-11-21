@@ -66,6 +66,10 @@ final class RecorderSettings {
   private static let shortcutKey = "recorderShortcut"
   private let defaults: UserDefaults
 
+  var automaticallyStopMeet: Bool {
+    didSet { defaults.set(automaticallyStopMeet, forKey: "automaticallyStopMeet") }
+  }
+
   var layout: RecorderLayout {
     didSet { defaults.set(layout.rawValue, forKey: Self.layoutKey) }
   }
@@ -83,6 +87,7 @@ final class RecorderSettings {
 
   init(defaults: UserDefaults = .standard) {
     self.defaults = defaults
+    automaticallyStopMeet = defaults.bool(forKey: "automaticallyStopMeet")
     layout = defaults.string(forKey: Self.layoutKey).flatMap(RecorderLayout.init) ?? .full
     // No value yet: the default shortcut. An empty value: cleared on purpose.
     if let data = defaults.data(forKey: Self.shortcutKey) {
@@ -136,6 +141,13 @@ struct RecorderSettingsView: View {
 
   var body: some View {
     Form {
+      Section {
+        Toggle("Automatically stop and transcribe", isOn: $settings.automaticallyStopMeet)
+      } header: {
+        Text("When a call ends")
+      } footer: {
+        Text("When Minutes detects that the call has ended, it automatically stops recording and starts transcription.")
+      }
       Section("Layout") {
         HStack(spacing: 14) {
           LayoutChoice(

@@ -34,6 +34,9 @@ private func defaults() -> UserDefaults {
 @Test @MainActor func settingsKeepLayoutAndShortcutIncludingAClearedOne() {
   let store = defaults()
   let fresh = RecorderSettings(defaults: store)
+  #expect(!fresh.automaticallyStopMeet)
+  fresh.automaticallyStopMeet = true
+  #expect(RecorderSettings(defaults: store).automaticallyStopMeet)
   #expect(fresh.layout == .full)
   #expect(fresh.shortcut == .default)
 
